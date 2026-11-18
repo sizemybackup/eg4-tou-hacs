@@ -147,6 +147,20 @@ drift, `tools/check_ui_docs.py` knows which source files change what users see
 uv run --no-project --with pytest-homeassistant-custom-component --with holidays --with home-assistant-frontend python -I -m pytest
 node --test tests/frontend/card.test.mjs      # the timeline card's rendering
 ```
+### Clean-install test
+
+`tools/clean_install_test.py` downloads a **published** release from GitHub, installs it into a brand-new
+Home Assistant container (host networking, so the wizard's scan can find a real gateway; read-only
+mode), and checks the whole new-user journey: archive layout, setup wizard, entities, card files, the
+cards rendering in a real browser, Configure and the reload it triggers, a Home Assistant restart, and a
+clean uninstall. Run it before tagging a release:
+
+```
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.7.2
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.7.2 \
+    --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4        # oldest supported version
+```
+
 
 ## License
 
