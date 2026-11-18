@@ -1,0 +1,118 @@
+# EG4 Local TOU Manager: ready-made dashboard (core cards only, no custom JavaScript).
+#
+# Install: Settings > Dashboards > Add dashboard > "New dashboard from scratch", open it,
+# three dots > Edit dashboard > three dots > Raw configuration editor, and paste this file.
+#
+# The "Today's rules" and "Pending changes" tables find the integration's entities by
+# themselves. The tiles and controls use the default entity ids (sensor.eg4_tou_*,
+# switch.eg4_tou_*, number.eg4_tou_*, time.eg4_tou_*). If yours differ (for example an
+# older install that got an area prefix), find/replace them in the raw editor.
+title: EG4 TOU
+views:
+  - title: Schedule
+    path: schedule
+    icon: mdi:battery-clock
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Status
+            icon: mdi:solar-power-variant
+          - type: tile
+            entity: sensor.eg4_tou_controller_status
+            name: Mode
+            icon: mdi:shield-check
+            grid_options: { columns: 6 }
+          - type: tile
+            entity: sensor.eg4_tou_active_profile
+            name: Today's profile
+            icon: mdi:calendar-today
+            grid_options: { columns: 6 }
+          - type: tile
+            entity: sensor.eg4_tou_registers_out_of_sync
+            name: Settings out of sync
+            icon: mdi:file-compare
+            grid_options: { columns: 12 }
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: switch.eg4_tou_read_only_mode
+                state: "on"
+            card:
+              type: markdown
+              content: >-
+                **Read-only mode.** The integration is reading your inverter and showing the plan
+                below, but it is **not writing anything**. Turn off "Read-only mode" under
+                Controls when the plan looks right.
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: switch.eg4_tou_read_only_mode
+                state: "off"
+            card:
+              type: markdown
+              content: >-
+                **Read-write mode.** Differences between the plan and the inverter are
+                written automatically every 10 minutes.
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Today's rules
+            icon: mdi:table-clock
+          - type: markdown
+            content: |-
+              {% set ents = integration_entities('eg4_tou') %}
+              {% set prof = ents | select('match', 'sensor[.].*_active_profile$') | list | first | default('') %}
+              {% set rules = state_attr(prof, 'rules') if prof else none %}
+              {% if rules %}
+              | Rule | Plan | Inverter now | |
+              |:--|:--|:--|:-:|
+              {% for r in rules -%}
+              | {{ r.rule }} | {{ r.plan }} | {{ r.now }} | {{ '' if r.in_sync is none else ('✅' if r.in_sync else '⚠️') }} |
+              {% endfor %}
+              {% else %}
+              The first inverter reading has not arrived yet.
+              {% endif %}
+          - type: heading
+            heading: Pending changes
+            heading_style: subtitle
+          - type: markdown
+            content: |-
+              {% set ents = integration_entities('eg4_tou') %}
+              {% set pend = ents | select('match', 'sensor[.].*_registers_out_of_sync$') | list | first | default('') %}
+              {% set ch = state_attr(pend, 'changes') if pend else [] %}
+              {% if ch %}**{{ ch | count }} setting(s) differ from the plan:**
+              {% for c in ch %}- {{ c }}
+              {% endfor %}{% else %}Everything the integration manages matches the plan.{% endif %}
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Controls
+            icon: mdi:tune
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: switch.eg4_tou_read_only_mode
+                name: Read-only mode (no writes)
+              - entity: switch.eg4_tou_controller_enabled
+                name: Controller enabled (off = paused)
+              - type: section
+                label: Charge limit (overnight charge stops at)
+              - entity: number.eg4_tou_charge_limit_summer_weekday
+                name: Summer weekday
+              - entity: number.eg4_tou_charge_limit_winter_weekday
+                name: Winter weekday
+              - entity: number.eg4_tou_charge_limit_weekend_holiday
+                name: Weekend / holiday
+              - type: section
+                label: Overnight charge
+              - entity: time.eg4_tou_overnight_charge_start
+                name: Window starts
+              - entity: time.eg4_tou_overnight_charge_end
+                name: Window ends
+              - entity: number.eg4_tou_ac_charge_power
+                name: AC charge power

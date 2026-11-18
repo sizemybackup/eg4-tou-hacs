@@ -75,7 +75,7 @@ async def test_read_only_flow_never_writes(hass: HomeAssistant, gateway):
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
     await hass.async_block_till_done()
     assert gateway.writes == []
-    assert hass.states.get("sensor.eg4_tou_manager_controller_status").state == "read_only"
+    assert hass.states.get("sensor.eg4_tou_controller_status").state == "read_only"
 
 
 async def test_config_flow_unreachable(hass: HomeAssistant):
@@ -91,8 +91,8 @@ async def test_default_is_off_and_never_writes(hass: HomeAssistant, gateway):
     await hass.config_entries.async_setup(e.entry_id)
     await hass.async_block_till_done()
     assert gateway.writes == []
-    assert hass.states.get("sensor.eg4_tou_manager_controller_status").state == "off"
-    assert int(hass.states.get("sensor.eg4_tou_manager_registers_out_of_sync").state) > 0
+    assert hass.states.get("sensor.eg4_tou_controller_status").state == "off"
+    assert int(hass.states.get("sensor.eg4_tou_registers_out_of_sync").state) > 0
 
 
 async def test_dry_run_does_not_write(hass: HomeAssistant, gateway):
@@ -102,7 +102,7 @@ async def test_dry_run_does_not_write(hass: HomeAssistant, gateway):
     await hass.config_entries.async_setup(e.entry_id)
     await hass.async_block_till_done()
     assert gateway.writes == []
-    assert hass.states.get("sensor.eg4_tou_manager_controller_status").state == "read_only"
+    assert hass.states.get("sensor.eg4_tou_controller_status").state == "read_only"
 
 
 async def test_live_mode_converges_then_stays_quiet(hass: HomeAssistant, gateway):
@@ -112,7 +112,7 @@ async def test_live_mode_converges_then_stays_quiet(hass: HomeAssistant, gateway
     await hass.config_entries.async_setup(e.entry_id)
     await hass.async_block_till_done()
     assert gateway.writes, "live mode should have written differences"
-    assert hass.states.get("sensor.eg4_tou_manager_registers_out_of_sync").state == "0"
+    assert hass.states.get("sensor.eg4_tou_registers_out_of_sync").state == "0"
     n = len(gateway.writes)
     coordinator = hass.data[DOMAIN][e.entry_id]
     await coordinator.async_refresh()
@@ -268,3 +268,17 @@ async def test_scan_flags_non_eg4_modbus_device(gateway):
     gateway.regs[160] = 40000  # a different device: values not 0..100
     found = await scan_hosts(["127.0.0.1"], port=gateway.port)
     assert found[0].looks_like_eg4 is False
+
+
+async def test_predictable_entity_ids_and_rules_attribute(hass: HomeAssistant, gateway):
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    for eid in ("sensor.eg4_tou_active_profile", "sensor.eg4_tou_registers_out_of_sync",
+                "sensor.eg4_tou_controller_status", "switch.eg4_tou_controller_enabled",
+                "switch.eg4_tou_read_only_mode", "number.eg4_tou_ac_charge_power",
+                "number.eg4_tou_charge_limit_winter_weekday", "time.eg4_tou_overnight_charge_start"):
+        assert hass.states.get(eid), eid
+    rules = hass.states.get("sensor.eg4_tou_active_profile").attributes["rules"]
+    assert {r["rule"] for r in rules} >= {"Hold windows (AC First)", "AC charge power"}

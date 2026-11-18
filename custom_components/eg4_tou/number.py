@@ -17,6 +17,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class OptionNumber(TouEntity, NumberEntity):
+    _domain = "number"
     _attr_mode = NumberMode.BOX
 
     def __init__(self, c, key, name, lo, hi, step, unit):

@@ -15,6 +15,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class OptionTime(TouEntity, TimeEntity):
+    _domain = "time"
     def __init__(self, c, key, name):
         super().__init__(c, key, name)
         self._key = key

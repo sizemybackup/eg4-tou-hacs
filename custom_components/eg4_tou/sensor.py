@@ -3,6 +3,7 @@ from __future__ import annotations
 from homeassistant.components.sensor import SensorEntity
 
 from .base import TouEntity
+from .planner import rules_table
 from .const import DOMAIN
 
 
@@ -12,6 +13,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class ProfileSensor(TouEntity, SensorEntity):
+    _domain = "sensor"
     def __init__(self, c):
         super().__init__(c, "profile", "Active profile")
 
@@ -22,10 +24,13 @@ class ProfileSensor(TouEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         d = self.coordinator.data
-        return {"peak_windows": d.peaks, **{f"reg_{r}": self.coordinator.describe(r, v) for r, v in d.plan.registers.items()}}
+        return {"peak_windows": d.peaks,
+                "rules": rules_table(d.plan, d.current, d.peaks),
+                **{f"reg_{r}": self.coordinator.describe(r, v) for r, v in d.plan.registers.items()}}
 
 
 class PendingSensor(TouEntity, SensorEntity):
+    _domain = "sensor"
     _attr_icon = "mdi:file-compare"
 
     def __init__(self, c):
@@ -42,6 +47,7 @@ class PendingSensor(TouEntity, SensorEntity):
 
 
 class StatusSensor(TouEntity, SensorEntity):
+    _domain = "sensor"
     _attr_icon = "mdi:information-outline"
 
     def __init__(self, c):

@@ -93,3 +93,21 @@ def test_custom_tariff_matches_bge_preset_output():
     for d in (date(2026, 7, 15), date(2026, 12, 2)):
         assert build_plan(d, t, Settings(), offpeak_day=False).registers == \
                build_plan(d, BGE_RL, Settings(), offpeak_day=False).registers
+
+
+def test_rules_table_plan_vs_inverter():
+    from custom_components.eg4_tou.planner import rules_table
+    p = build_plan(date(2026, 11, 18), BGE_RL, Settings(), offpeak_day=False)
+    rows = rules_table(p, dict(p.registers), "07:00-11:00, 17:00-21:00")
+    by = {r["rule"]: r for r in rows}
+    assert by["On-peak hours (your tariff)"]["plan"] == "07:00-11:00, 17:00-21:00"
+    assert by["Hold windows (AC First)"]["plan"] == "00:00-07:00, 11:00-17:00, 21:00-23:59"
+    assert by["Overnight charge window"]["plan"] == "01:00-05:00"      # unused slots skipped
+    assert by["Charge starts below / stops at"]["plan"] == "65% to 70%"
+    assert by["AC charge power"]["plan"] == "5 kW"
+    assert all(r["in_sync"] for r in rows if r["in_sync"] is not None)
+    # inverter differs / unread
+    cur = dict(p.registers); cur[161] = 80; del cur[66]
+    by = {r["rule"]: r for r in rules_table(p, cur, "")}
+    assert by["Charge starts below / stops at"]["now"] == "65% to 80%" and by["Charge starts below / stops at"]["in_sync"] is False
+    assert by["AC charge power"]["now"] == "unknown" and by["AC charge power"]["in_sync"] is False

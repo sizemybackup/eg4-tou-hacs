@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Callable
 
-from .modbus import POWER_REG, pack_time
+from .modbus import POWER_REG, pack_time, unpack_time
 
 END_OF_DAY = "23:59"
 MAX_PEAKS_PER_DAY = 2  # AC First has 3 windows, which covers at most 2 peaks
@@ -157,6 +157,45 @@ def build_plan(
 
 def next_day(day: date) -> date:
     return day + timedelta(days=1)
+
+
+# ---- Rules table (for dashboards) ---------------------------------------
+
+def _windows(regs: dict[int, int | None], first_reg: int, count: int = 3) -> str | None:
+    """'HH:MM-HH:MM, ...' from consecutive start/end registers; None if unread.
+    A 00:00-00:00 pair is an unused slot and is skipped."""
+    parts = []
+    for i in range(count):
+        a, b = regs.get(first_reg + 2 * i), regs.get(first_reg + 2 * i + 1)
+        if a is None or b is None:
+            return None
+        if a == 0 and b == 0:
+            continue
+        parts.append(f"{unpack_time(a)}-{unpack_time(b)}")
+    return ", ".join(parts) or "none"
+
+
+def rules_table(plan: Plan, current: dict[int, int], peaks_text: str) -> list[dict]:
+    """Rows for a dashboard: what the plan wants vs what the inverter holds now."""
+    def pct(regs):
+        lo, hi = regs.get(160), regs.get(161)
+        return None if lo is None or hi is None else f"{lo}% to {hi}%"
+
+    def kw(regs):
+        v = regs.get(POWER_REG)
+        return None if v is None else f"{v / 10:g} kW"
+
+    rows = [{"rule": "On-peak hours (your tariff)", "plan": peaks_text or "none", "now": "n/a", "in_sync": None}]
+    for label, fn in (
+        ("Hold windows (AC First)", lambda r: _windows(r, 152)),
+        ("Overnight charge window", lambda r: _windows(r, 68)),
+        ("Charge starts below / stops at", pct),
+        ("AC charge power", kw),
+    ):
+        want, have = fn(plan.registers), fn(current)
+        rows.append({"rule": label, "plan": want, "now": have if have is not None else "unknown",
+                     "in_sync": want == have})
+    return rows
 
 
 # ---- Custom tariffs -----------------------------------------------------

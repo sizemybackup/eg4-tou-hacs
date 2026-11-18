@@ -28,6 +28,20 @@ The result is a battery cycled between its discharge floor and a modest ceiling
 (good for cell life), spent only on the expensive hours. Peak hours come from the
 tariff preset; AC First windows are derived automatically as the complement.
 
+## Dashboard
+
+A ready-made dashboard (core cards only, no custom JavaScript) is in
+[`dashboards/eg4_tou_dashboard.yaml`](dashboards/eg4_tou_dashboard.yaml): status tiles
+(mode, today's profile, settings out of sync), a **Today's rules** table showing for each
+rule the plan, what the inverter holds now and whether they match, the list of pending
+changes, and all the controls.
+
+Install it: Settings, Dashboards, Add dashboard, *New dashboard from scratch*; open it,
+three dots, Edit dashboard, three dots, **Raw configuration editor**, paste the file.
+The rules tables find the integration's entities by themselves. Tiles and controls use
+the default entity ids (`sensor.eg4_tou_*`, `switch.eg4_tou_*`, ...); if yours differ,
+find/replace them in the raw editor.
+
 ## Safety (please read)
 
 * **Setup asks read-only or read-write; read-only is the default.** In read-only mode nothing is ever written. Look at "Registers out of sync"

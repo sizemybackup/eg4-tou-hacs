@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import DOMAIN
 from .coordinator import TouCoordinator
@@ -9,9 +10,13 @@ from .coordinator import TouCoordinator
 
 class TouEntity(CoordinatorEntity[TouCoordinator]):
     _attr_has_entity_name = True
+    _domain: str = ""   # set by each platform class
 
     def __init__(self, coordinator: TouCoordinator, key: str, name: str) -> None:
         super().__init__(coordinator)
+        # Predictable ids (e.g. sensor.eg4_tou_active_profile) so a shared dashboard works
+        # on every install, instead of area/device-name dependent ones.
+        self.entity_id = f"{self._domain}.eg4_tou_{slugify(name)}"
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
         self._attr_name = name
         self._attr_device_info = DeviceInfo(
