@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "EG4 Local TOU Manager",
-        "description": "Enter the address of your RS485-to-Ethernet Modbus gateway. The controller starts switched OFF and in dry-run mode; nothing is written to your inverter until you enable it.",
+        "description": "Enter the address of your RS485-to-Ethernet Modbus gateway.",
         "data": {
           "host": "Gateway IP address",
           "port": "Modbus TCP port",
@@ -12,9 +12,28 @@
           "country": "Country code for holidays (e.g. US)",
           "subdiv": "State/region for holidays (optional, e.g. MD)"
         }
+      },
+      "mode": {
+        "title": "Read-only or read-write?",
+        "description": "**Read-only (recommended first):** reads your inverter and shows, on the device page, exactly what the schedule WOULD change. Nothing is ever written. Use this to check the plan against your tariff before trusting it.\\n\\n**Read-write:** every 10 minutes the integration changes your inverter's AC-charge windows, AC First windows, charge limits and AC charge power to match the plan. You can switch between the two later with the 'Read-only mode' switch.",
+        "data": {
+          "mode": "Mode"
+        }
+      },
+      "confirm": {
+        "title": "Confirm read-write",
+        "description": "This will modify settings on your inverter. Make sure no other automation or tool is writing the same registers (AC charge windows, AC First windows, AC charge start/end SOC, AC charge power). There is no warranty.",
+        "data": {
+          "understood": "I understand and want to enable writes"
+        }
       }
     },
-    "error": {"cannot_connect": "Could not read the inverter through that gateway."},
-    "abort": {"already_configured": "This gateway is already configured."}
+    "error": {
+      "cannot_connect": "Could not read the inverter through that gateway.",
+      "must_confirm": "Tick the box to enable read-write, or go back and choose read-only."
+    },
+    "abort": {
+      "already_configured": "This gateway is already configured."
+    }
   }
 }

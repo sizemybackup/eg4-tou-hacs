@@ -8,8 +8,8 @@ from .const import DOMAIN, OPT_DRY_RUN, OPT_ENABLED
 
 async def async_setup_entry(hass, entry, async_add_entities):
     c = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([OptionSwitch(c, OPT_ENABLED, "Controller enabled", "mdi:power"),
-                        OptionSwitch(c, OPT_DRY_RUN, "Dry run (plan only, no writes)", "mdi:test-tube")])
+    async_add_entities([OptionSwitch(c, OPT_ENABLED, "Controller enabled (off = paused)", "mdi:power"),
+                        OptionSwitch(c, OPT_DRY_RUN, "Read-only mode (no writes to inverter)", "mdi:test-tube")])
 
 
 class OptionSwitch(TouEntity, SwitchEntity):

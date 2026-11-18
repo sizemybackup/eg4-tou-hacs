@@ -28,9 +28,9 @@ tariff preset; AC First windows are derived automatically as the complement.
 
 ## Safety (please read)
 
-* **It starts OFF and in dry-run.** Install it, look at "Registers out of sync"
-  and the "Active profile" attributes, and only then switch "Controller enabled"
-  on and "Dry run" off.
+* **Setup asks read-only or read-write; read-only is the default.** In read-only mode nothing is ever written. Look at "Registers out of sync"
+  and the "Active profile" attributes, and only then turn off the "Read-only mode"
+  switch. Read-write needs an explicit confirmation in setup.
 * Writes are limited to a fixed whitelist (AC charge power, charge windows, AC
   First windows, AC charge start/end SOC) with range checks. Nothing else can be
   written.

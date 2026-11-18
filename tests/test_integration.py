@@ -29,7 +29,38 @@ async def test_config_flow_creates_entry(hass: HomeAssistant, gateway):
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {
         "host": "127.0.0.1", "port": gateway.port, "unit": 1,
         "tariff": "bge_rl", "country": "US", "subdiv": "MD"})
+    assert r["step_id"] == "mode"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
     assert r["type"] == "create_entry"
+    assert r["options"] == {"enabled": True, "dry_run": True}
+
+
+async def _to_mode(hass, gateway):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    return await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1,
+        "tariff": "bge_rl", "country": "US", "subdiv": "MD"})
+
+
+async def test_read_write_requires_confirmation(hass: HomeAssistant, gateway):
+    r = await _to_mode(hass, gateway)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_write"})
+    assert r["step_id"] == "confirm"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"understood": False})
+    assert r["type"] == "form" and r["errors"] == {"understood": "must_confirm"}
+    assert gateway.writes == [], "nothing may be written before the confirmation is ticked"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"understood": True})
+    assert r["type"] == "create_entry" and r["options"]["dry_run"] is False
+    await hass.async_block_till_done()
+    assert gateway.writes, "after confirming read-write, writes begin"
+
+
+async def test_read_only_flow_never_writes(hass: HomeAssistant, gateway):
+    r = await _to_mode(hass, gateway)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
+    await hass.async_block_till_done()
+    assert gateway.writes == []
+    assert hass.states.get("sensor.eg4_tou_manager_controller_status").state == "read_only"
 
 
 async def test_config_flow_unreachable(hass: HomeAssistant):
@@ -56,7 +87,7 @@ async def test_dry_run_does_not_write(hass: HomeAssistant, gateway):
     await hass.config_entries.async_setup(e.entry_id)
     await hass.async_block_till_done()
     assert gateway.writes == []
-    assert hass.states.get("sensor.eg4_tou_manager_controller_status").state == "dry_run"
+    assert hass.states.get("sensor.eg4_tou_manager_controller_status").state == "read_only"
 
 
 async def test_live_mode_converges_then_stays_quiet(hass: HomeAssistant, gateway):

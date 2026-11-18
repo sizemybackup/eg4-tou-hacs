@@ -29,7 +29,7 @@ class TouData:
     current: dict[int, int]
     plan: Plan
     pending: list[tuple[int, int, int | None]]
-    mode: str                      # "off" | "dry_run" | "live"
+    mode: str                      # "off" | "read_only" | "live"
     last_write: str = "never"
     peaks: str = ""
     extra: dict = field(default_factory=dict)
@@ -58,7 +58,7 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         o = self.entry.options
         if not o[OPT_ENABLED]:
             return "off"
-        return "dry_run" if o[OPT_DRY_RUN] else "live"
+        return "read_only" if o[OPT_DRY_RUN] else "live"
 
     async def _read_all(self) -> dict[int, int]:
         regs: dict[int, int] = {}
