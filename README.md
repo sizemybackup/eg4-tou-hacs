@@ -10,6 +10,8 @@ batteries on a Maryland BGE Schedule RL tariff.
 
 > **Read the safety section before enabling read-write mode.**
 
+**New to this? Start with the [wiring and setup guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html)**: parts list, photos, the gateway settings that work, and how this integration fits in.
+
 ## What it does
 
 Every 10 minutes it reads the inverter, works out what today should look like

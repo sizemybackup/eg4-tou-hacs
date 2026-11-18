@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Find your inverter's gateway",
-        "description": "The integration talks to your inverter through an RS485-to-Ethernet gateway (Modbus TCP, port 502). A scan looks at your local network for it. The scan only reads; it never writes anything.",
+        "description": "The integration talks to your inverter through an RS485-to-Ethernet gateway (Modbus TCP, port 502). A scan looks at your local network for it. The scan only reads; it never writes anything.\n\nNo gateway yet, or not sure how to wire it? Follow the [wiring and setup guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html) (parts list, photos, gateway settings).",
         "menu_options": {
           "scan": "Scan my network for the gateway",
           "manual": "Enter the address manually"
@@ -66,7 +66,7 @@
       },
       "manual": {
         "title": "Gateway connection",
-        "description": "Address of your RS485-to-Ethernet Modbus gateway. Next you will set up your tariff's peak hours, then choose read-only or read-write.",
+        "description": "Address of your RS485-to-Ethernet Modbus gateway. Next you will set up your tariff's peak hours, then choose read-only or read-write.\n\nWiring and gateway settings: [setup guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html).",
         "data": {
           "host": "Gateway IP address",
           "port": "Modbus TCP port",
