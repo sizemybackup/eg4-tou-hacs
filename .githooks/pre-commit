@@ -1,0 +1,4 @@
+#!/bin/sh
+# Warn (or block with UI_DOCS_STRICT=1) when a commit changes UI that the blog articles show.
+# Enable once per clone:  git config core.hooksPath .githooks
+python3 "$(git rev-parse --show-toplevel)/tools/check_ui_docs.py" --git

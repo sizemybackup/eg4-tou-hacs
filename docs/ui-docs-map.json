@@ -1,0 +1,89 @@
+{
+  "_about": "Which source files change what users see, and which blog articles and screenshots show it. Used by tools/check_ui_docs.py. Article and screenshot names are on https://sizemybackup.com (local paths live in ~/.config/eg4-ui-docs.json, not here).",
+  "groups": {
+    "setup-wizard": {
+      "why": "The integration's setup and Configure screens: fields, labels, defaults, step order, scan banner.",
+      "ui_files": [
+        "custom_components/eg4_tou/config_flow.py",
+        "custom_components/eg4_tou/translations/en.json",
+        "custom_components/eg4_tou/scanner.py"
+      ],
+      "articles": [
+        "eg4-local-tou-manager-home-assistant.html",
+        "eg4-12000xp-home-assistant-local-guide.html",
+        "eg4-12000xp-bge-time-of-use-schedule-rl.html"
+      ],
+      "screenshots": [
+        "setup-1-add-integration-search.webp",
+        "setup-2-gateway-connection.webp",
+        "setup-3-tariff.webp",
+        "setup-4-summer-dates.webp",
+        "setup-5-peak-window.webp",
+        "setup-6-read-only-or-read-write.webp",
+        "setup-7-confirm-read-write.webp",
+        "setup-8-name-and-assign.webp"
+      ]
+    },
+    "device-and-entities": {
+      "why": "Entities and their names, categories and defaults, as shown on the device page and in dashboards.",
+      "ui_files": [
+        "custom_components/eg4_tou/switch.py",
+        "custom_components/eg4_tou/number.py",
+        "custom_components/eg4_tou/time.py",
+        "custom_components/eg4_tou/sensor.py",
+        "custom_components/eg4_tou/base.py",
+        "custom_components/eg4_tou/const.py"
+      ],
+      "articles": [
+        "eg4-local-tou-manager-home-assistant.html"
+      ],
+      "screenshots": [
+        "device-page.webp"
+      ]
+    },
+    "dashboard-and-cards": {
+      "why": "The ready-made dashboard and the two custom cards.",
+      "ui_files": [
+        "dashboards/eg4_tou_dashboard.yaml",
+        "custom_components/eg4_tou/frontend/*.js"
+      ],
+      "articles": [
+        "eg4-local-tou-manager-home-assistant.html",
+        "eg4-12000xp-home-assistant-local-guide.html"
+      ],
+      "screenshots": [
+        "dashboard-finished.webp",
+        "dashboard-raw-editor.webp",
+        "rules-card-with-battery.webp"
+      ]
+    },
+    "brand": {
+      "why": "Icon and logo shown in the integration list and on the device page.",
+      "ui_files": [
+        "custom_components/eg4_tou/brand/*"
+      ],
+      "articles": [
+        "eg4-local-tou-manager-home-assistant.html"
+      ],
+      "screenshots": [
+        "setup-1-add-integration-search.webp",
+        "setup-8-name-and-assign.webp",
+        "device-page.webp"
+      ]
+    },
+    "schedule-logic": {
+      "why": "Not pixels, but numbers the articles print: peak windows, hold windows, holiday rules, defaults.",
+      "ui_files": [
+        "custom_components/eg4_tou/planner.py",
+        "custom_components/eg4_tou/coordinator.py"
+      ],
+      "articles": [
+        "eg4-12000xp-bge-time-of-use-schedule-rl.html",
+        "eg4-12000xp-ac-first-vs-ac-charge.html",
+        "eg4-12000xp-daylight-saving-time.html",
+        "eg4-battery-charge-limit-80-percent.html"
+      ],
+      "screenshots": []
+    }
+  }
+}

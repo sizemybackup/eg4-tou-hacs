@@ -128,6 +128,19 @@ problem privately, are in [SECURITY.md](SECURITY.md).
   can make *other* clients' sensors glitch. This integration connects briefly
   every 10 minutes to keep that to a minimum.
 
+## Keeping the screenshots and articles in step
+
+The setup walkthrough and guides on sizemybackup.com show this integration's screens. So that they do not
+drift, `tools/check_ui_docs.py` knows which source files change what users see
+(`docs/ui-docs-map.json`) and records a hash of each group when the articles were last confirmed to match
+(`docs/ui-docs-state.json`).
+
+- `python3 tools/check_ui_docs.py` lists every group and whether its articles and screenshots may be stale.
+- Enable the commit check once per clone: `git config core.hooksPath .githooks`. It warns when a commit
+  touches UI files that the articles show (`UI_DOCS_STRICT=1` makes it block instead).
+- After retaking the screenshots and updating the articles: `python3 tools/check_ui_docs.py ack <group>`.
+- Local paths to the articles are read from `~/.config/eg4-ui-docs.json`, which is not in the repo.
+
 ## Development
 
 ```
