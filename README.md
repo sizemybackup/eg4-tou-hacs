@@ -8,7 +8,7 @@ windows, charge limits and AC charge power matched to the day's tariff profile.
 Built and field-tested on an EG4 12000XP V2 with two 314Ah 16 kW wall-mount
 batteries on a Maryland BGE Schedule RL tariff.
 
-> **Status: v0.1 alpha.** Read the safety section before enabling it.
+> **Status: v0.2 alpha.** Read the safety section before enabling it.
 
 ## What it does
 
