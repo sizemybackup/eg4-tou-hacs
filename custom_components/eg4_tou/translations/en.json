@@ -70,7 +70,9 @@
       "season_full_year": "Summer cannot cover the whole year. Use 'one schedule all year' instead.",
       "peak_order": "The peak must end after it starts, on the same day. Midnight-crossing peaks: split them into two windows.",
       "peak_overlap": "The two peak windows overlap.",
-      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day."
+      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day.",
+      "invalid_host": "Enter an IP address or a host name (letters, digits, dots and hyphens).",
+      "public_address": "That is a public internet address. Modbus has no authentication, so the gateway must be on your local network: use its local (private) address."
     },
     "abort": {
       "already_configured": "This gateway is already configured."

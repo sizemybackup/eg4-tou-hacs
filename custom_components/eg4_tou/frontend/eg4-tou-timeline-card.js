@@ -21,7 +21,7 @@ function toMin(hhmm) {
 const pct = (min) => Math.max(0, Math.min(100, (min / DAY) * 100));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const dash = (s) => String(s).replace("-", "–");
-const rangeText = (ws) => (ws && ws.length ? ws.map(([a, b]) => `${a}–${b}`).join(", ") : "none");
+const rangeText = (ws) => (ws && ws.length ? ws.map(([a, b]) => `${esc(a)}–${esc(b)}`).join(", ") : "none");
 
 function bars(windows, cls, now) {
   const out = (windows || []).map(([a, b]) => {

@@ -341,3 +341,73 @@ async def test_custom_flow_stores_the_holiday_choice(hass: HomeAssistant, gatewa
     r = await f.async_configure(r["flow_id"], {"mode": "read_only"})
     assert r["data"]["custom_tariff"]["offpeak_holidays"] is False
     assert r["data"]["custom_tariff"]["offpeak_weekends"] is True
+
+
+# ---- security hardening ---------------------------------------------------------------------
+
+def test_only_private_addresses_are_local():
+    from custom_components.eg4_tou.scanner import is_local_address
+    for ok in ("192.168.1.200", "10.0.0.5", "172.16.4.9", "127.0.0.1", "169.254.1.1", "fd12::1"):
+        assert is_local_address(ok), ok
+    for bad in ("8.8.8.8", "1.1.1.1", "203.0.113.7", "100.64.1.1", "172.32.0.1", "2001:4860:4860::8888", "gateway.local", "", "not an ip"):
+        assert not is_local_address(bad), bad
+
+
+def test_host_error_rules():
+    from custom_components.eg4_tou.config_flow import host_error
+    assert host_error("192.168.1.200") is None and host_error(" 10.1.2.3 ") is None
+    assert host_error("gateway.local") is None and host_error("waveshare-1") is None
+    assert host_error("8.8.8.8") == "public_address" and host_error("2001:4860:4860::8888") == "public_address"
+    for bad in ("", "  ", "a b", "http://x", "host;rm -rf", "x" * 300, "-bad", "bad-", "a..b", "<script>"):
+        assert host_error(bad) == "invalid_host", repr(bad)
+
+
+async def test_scan_never_connects_to_a_public_address():
+    from custom_components.eg4_tou.scanner import scan_hosts
+    with patch("asyncio.open_connection", side_effect=AssertionError("must not connect")) as oc:
+        assert await scan_hosts(["8.8.8.8", "1.1.1.1", "203.0.113.9"]) == []
+        oc.assert_not_called()
+
+
+async def test_candidate_hosts_skip_an_adapter_with_a_public_address(hass: HomeAssistant):
+    from custom_components.eg4_tou.scanner import candidate_hosts
+    adapters = [
+        {"enabled": True, "ipv4": [{"address": "203.0.113.5", "network_prefix": 24}]},      # public: skipped
+        {"enabled": True, "ipv4": [{"address": "192.168.1.10", "network_prefix": 24}]},
+        {"enabled": True, "ipv4": [{"address": "127.0.0.1", "network_prefix": 8}]},          # loopback: skipped
+    ]
+    with patch("homeassistant.components.network.async_get_adapters", AsyncMock(return_value=adapters)):
+        hosts = await candidate_hosts(hass)
+    assert hosts and all(h.startswith("192.168.1.") for h in hosts) and "192.168.1.10" not in hosts
+    assert not any(h.startswith("203.0.113.") for h in hosts)
+
+
+async def test_setup_rejects_public_and_malformed_gateway_addresses(hass: HomeAssistant):
+    r = await _manual(hass)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "8.8.8.8", "port": 502, "unit": 1, "country": "US", "subdiv": ""})
+    assert r["step_id"] == "user" and r["errors"] == {"host": "public_address"}
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "bad host!", "port": 502, "unit": 1, "country": "US", "subdiv": ""})
+    assert r["errors"] == {"host": "invalid_host"}
+
+
+async def test_numbers_are_bounded_by_the_form(hass: HomeAssistant):
+    import voluptuous as vol
+    r = await _manual(hass)
+    for bad in ({"port": 0, "unit": 1}, {"port": 70000, "unit": 1}, {"port": 502, "unit": 0}, {"port": 502, "unit": 300}):
+        with pytest.raises(Exception):
+            await hass.config_entries.flow.async_configure(r["flow_id"], {
+                "host": "192.168.1.5", "country": "US", "subdiv": "", **bad})
+
+
+async def test_write_switches_are_config_entities_not_voice_exposed(hass: HomeAssistant, gateway):
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.const import EntityCategory
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    reg = er.async_get(hass)
+    for eid in ("switch.eg4_tou_read_only_mode", "switch.eg4_tou_controller_enabled"):
+        assert reg.async_get(eid).entity_category is EntityCategory.CONFIG, eid

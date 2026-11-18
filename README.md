@@ -101,6 +101,14 @@ Then: Settings, Devices & services, **Add integration**, search for **EG4 Local 
 
 A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manager](https://sizemybackup.com/eg4-local-tou-manager-home-assistant.html).
 
+## Security
+
+Modbus TCP has no authentication or encryption: keep the gateway on a trusted network, never forward
+port 502, and set a password on the gateway's web page. The integration is local-only, stores no
+credentials, defaults to read-only, can write only a short whitelist of inverter settings, and its
+network scan only reads and only touches your own private network. Details, and how to report a
+problem privately, are in [SECURITY.md](SECURITY.md).
+
 ## Known limits in v0.1
 
 * The scan covers one /24 per network adapter and only port 502. Gateways on

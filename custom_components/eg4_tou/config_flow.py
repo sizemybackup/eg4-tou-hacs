@@ -6,6 +6,8 @@ their schedule later from the integration's Configure button.
 from __future__ import annotations
 
 import calendar
+import ipaddress
+import re
 from datetime import date
 
 import voluptuous as vol
@@ -16,7 +18,7 @@ from homeassistant.helpers import selector
 from .const import (CONF_COUNTRY, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
                     DOMAIN, OPT_DRY_RUN, OPT_ENABLED)
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
-from .scanner import async_scan
+from .scanner import async_scan, is_local_address
 from .planner import MAX_PEAKS_PER_DAY, PRESETS, tariff_from_custom, validate_peaks, winter_dates
 
 TARIFF_CHOICES = {
@@ -39,6 +41,21 @@ def _peak_schema(start: str, end: str, allow_more: bool) -> vol.Schema:
     if allow_more:
         fields[vol.Required("add_another", default=False)] = bool
     return vol.Schema(fields)
+
+
+_HOSTNAME = re.compile(
+    r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
+
+
+def host_error(host: str) -> str | None:
+    """Error key for a gateway address, or None. A host name is allowed; an IP literal must be
+    private/loopback/link-local, because Modbus has no authentication and must not face the internet."""
+    host = host.strip()
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return None if _HOSTNAME.match(host) else "invalid_host"
+    return None if is_local_address(host) else "public_address"
 
 
 class _TariffSteps:
@@ -162,17 +179,23 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
         rescan = bool(user_input and user_input.get("rescan"))
         if user_input is not None and not rescan:
             # raise_on_progress=False: an abandoned earlier attempt must not block a fresh one
-            await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}:{user_input[CONF_UNIT]}",
-                                           raise_on_progress=False)
-            self._abort_if_unique_id_configured()
-            client = Eg4Modbus(ModbusConfig(user_input[CONF_HOST], user_input[CONF_PORT], user_input[CONF_UNIT]))
-            try:
-                await client.read(160, 2)  # read-only probe: AC charge start/end SOC
-            except ModbusError:
-                errors["base"] = "cannot_connect"
+            host = str(user_input[CONF_HOST]).strip()
+            port, unit = int(user_input[CONF_PORT]), int(user_input[CONF_UNIT])
+            err = host_error(host)
+            if err:
+                errors[CONF_HOST] = err
             else:
-                self._data = {k: v for k, v in user_input.items() if k != "rescan"}
-                return await self._begin_tariff()
+                await self.async_set_unique_id(f"{host}:{port}:{unit}", raise_on_progress=False)
+                self._abort_if_unique_id_configured()
+                client = Eg4Modbus(ModbusConfig(host, port, unit))
+                try:
+                    await client.read(160, 2)  # read-only probe: AC charge start/end SOC
+                except ModbusError:
+                    errors["base"] = "cannot_connect"
+                else:
+                    self._data = {k: v for k, v in user_input.items() if k != "rescan"}
+                    self._data.update({CONF_HOST: host, CONF_PORT: port, CONF_UNIT: unit})
+                    return await self._begin_tariff()
 
         if user_input is None or rescan:
             self._found = {f.host: f for f in await async_scan(self.hass)}
@@ -195,8 +218,10 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
                     "on this network and set to Modbus port 502.")
         schema = vol.Schema({
             vol.Required(CONF_HOST, default=d.get(CONF_HOST) or next(iter(found), "")): host_field,
-            vol.Required(CONF_PORT, default=d.get(CONF_PORT, 502)): int,
-            vol.Required(CONF_UNIT, default=d.get(CONF_UNIT, 1)): int,
+            vol.Required(CONF_PORT, default=int(d.get(CONF_PORT, 502))): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=65535, step=1, mode=selector.NumberSelectorMode.BOX)),
+            vol.Required(CONF_UNIT, default=int(d.get(CONF_UNIT, 1))): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=247, step=1, mode=selector.NumberSelectorMode.BOX)),
             vol.Required(CONF_COUNTRY, default=d.get(CONF_COUNTRY) or self.hass.config.country or "US"): str,
             vol.Optional(CONF_SUBDIV, default=d.get(CONF_SUBDIV, "")): str,
             vol.Optional("rescan", default=False): bool,

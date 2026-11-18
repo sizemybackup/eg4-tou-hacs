@@ -38,7 +38,7 @@ function dur(min) {
 function labelAt(abs, week, h24) {
   const i = Math.floor(abs / DAY);
   const t = fmtTime(abs % DAY, h24);
-  return i > 0 && week[i] ? `${week[i].dow} ${t}` : t;
+  return i > 0 && week[i] ? `${esc(week[i].dow)} ${t}` : t;
 }
 
 const inWin = (ws, min) => (ws || []).find(([a, b]) => toMin(a) <= min && min < toMin(b)) || null;
@@ -141,21 +141,21 @@ function renderRules(model, now, v, o) {
   let gc;
   if (ch.inWindow) {
     let st;
-    if (charging) st = `⚡ <b>Charging</b> to ${f.end_soc}%`;
-    else if (v && v.soc != null && f.end_soc != null && v.soc >= f.end_soc) st = `✅ <b>Target ${f.end_soc}% reached</b>`;
-    else st = `⏳ <b>Window open</b> (charges below ${f.start_soc}%)`;
+    if (charging) st = `⚡ <b>Charging</b> to ${esc(f.end_soc)}%`;
+    else if (v && v.soc != null && f.end_soc != null && v.soc >= f.end_soc) st = `✅ <b>Target ${esc(f.end_soc)}% reached</b>`;
+    else st = `⏳ <b>Window open</b> (charges below ${esc(f.start_soc)}%)`;
     gc = `${st} · ends in <b>${dur(ch.endAbs - now)}</b> (${T(ch.endAbs)})`;
   } else gc = ch.any ? "💤 <b>Idle</b>" : "No grid-charge window set";
   rows.push(row("mdi:battery-charging-high", "#43a047", "Grid&nbsp;Charging", gc, true));
 
   if (!ch.inWindow && ch.nextAbs !== null) {
     rows.push(row("mdi:calendar-clock", "#43a047", "Next&nbsp;Charge",
-      `in <b>${dur(ch.nextAbs - now)}</b> (${T(ch.nextAbs)}) · Start/Stop SOC: ${f.start_soc}%/${f.end_soc}% at ${f.ac_kw} kW`, true));
+      `in <b>${dur(ch.nextAbs - now)}</b> (${T(ch.nextAbs)}) · Start/Stop SOC: ${esc(f.start_soc)}%/${esc(f.end_soc)}% at ${esc(f.ac_kw)} kW`, true));
   }
 
   const mode = { read_only: " · read-only, nothing is being written", off: " · controller paused", live: "" }[f.mode] ?? "";
   rows.push(row("mdi:sync", f.out_of_sync ? "var(--warning-color,#ffa600)" : "var(--success-color,#43a047)", "Inverter&nbsp;Schedule",
-    (f.out_of_sync ? `⚠️ <b>${f.out_of_sync} setting${f.out_of_sync === 1 ? "" : "s"} differ</b> from the plan` : "✅ <b>Matches the plan</b>") + mode, true));
+    (f.out_of_sync ? `⚠️ <b>${esc(f.out_of_sync)} setting${f.out_of_sync === 1 ? "" : "s"} differ</b> from the plan` : "✅ <b>Matches the plan</b>") + mode, true));
 
   if (v && v.soc != null) {
     let act = "idle";
@@ -164,7 +164,7 @@ function renderRules(model, now, v, o) {
     let eta = "";
     if (v.chargeW > 20 && o.capacityKwh && f.end_soc > v.soc) {
       const m = ((f.end_soc - v.soc) / 100) * o.capacityKwh / (v.chargeW / 1000) * 60;
-      eta = ` · ${dur(m)} to ${f.end_soc}%`;
+      eta = ` · ${dur(m)} to ${esc(f.end_soc)}%`;
     }
     rows.push(row("mdi:battery-70", "#66bb6a", "Battery", `${Math.round(v.soc)}% · ${act}${eta}`));
   }

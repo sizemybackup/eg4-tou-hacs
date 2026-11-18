@@ -49,3 +49,11 @@ test("no windows says none; text is escaped", () => {
   assert.ok(!h.includes("<b>x</b>") && h.includes("&lt;b&gt;x&lt;/b&gt;"));
   assert.equal(esc(`a&"'<`), "a&amp;&quot;&#39;&lt;");
 });
+
+test("hostile strings in the data never become markup (timeline card)", () => {
+  const evil = '<img src=x onerror=alert(1)>';
+  const m = { peaks: [[evil, evil]], hold: { plan: [[evil, evil]], inverter: [[evil, evil]] }, charge: { plan: [[evil, evil]], inverter: null } };
+  const h = renderTimeline(m, 0, evil);
+  assert.ok(!/<img/i.test(h), "an <img> tag leaked through");
+  assert.ok(h.includes("&lt;img"), "the text should be shown escaped");
+});

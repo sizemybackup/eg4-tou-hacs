@@ -90,3 +90,14 @@ test("24h clock and midnight rollover", () => {
   assert.equal(m.week[0].date, "2026-11-19"); assert.equal(m.useInverter, false);
   assert.equal(buildModel({ week: wed, facts }, "2026-12-30"), null);
 });
+
+test("hostile strings in the data never become markup (rules card)", () => {
+  const evil = '<img src=x onerror=alert(1)>';
+  const week = wed.map((d) => ({ ...d, dow: evil, day_type: evil, season: evil }));
+  const f = { mode: evil, out_of_sync: evil, start_soc: evil, end_soc: evil, ac_kw: evil };
+  const m = buildModel({ week, timeline: timelineOf(week[0]), facts: f }, week[0].date);
+  for (const now of [at(2), at(9), at(13), at(22)]) {
+    const h = renderRules(m, now, { soc: 50, chargeW: 5000, loadW: 2000 }, { h24: false, capacityKwh: 32, floor: 20 });
+    assert.ok(!/<img/i.test(h), "an <img> tag leaked through at minute " + now);
+  }
+});
