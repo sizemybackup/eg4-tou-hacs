@@ -1,0 +1,5 @@
+{
+  "name": "EG4 Local TOU Manager",
+  "homeassistant": "2025.1.0",
+  "render_readme": true
+}

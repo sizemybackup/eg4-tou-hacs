@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EG4 Local TOU Manager",
+        "description": "Enter the address of your RS485-to-Ethernet Modbus gateway. The controller starts switched OFF and in dry-run mode; nothing is written to your inverter until you enable it.",
+        "data": {
+          "host": "Gateway IP address",
+          "port": "Modbus TCP port",
+          "unit": "Modbus unit id",
+          "tariff": "Utility tariff",
+          "country": "Country code for holidays (e.g. US)",
+          "subdiv": "State/region for holidays (optional, e.g. MD)"
+        }
+      }
+    },
+    "error": {"cannot_connect": "Could not read the inverter through that gateway."},
+    "abort": {"already_configured": "This gateway is already configured."}
+  }
+}

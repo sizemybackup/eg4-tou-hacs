@@ -1,0 +1,12 @@
+{
+  "domain": "eg4_tou",
+  "name": "EG4 Local TOU Manager",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/sizemybackup/eg4-tou-hacs",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/sizemybackup/eg4-tou-hacs/issues",
+  "requirements": ["holidays"],
+  "version": "0.1.0"
+}
