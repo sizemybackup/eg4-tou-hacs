@@ -51,8 +51,14 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         d = entry.data
         self.client = Eg4Modbus(ModbusConfig(d[CONF_HOST], d.get(CONF_PORT, 502), d.get(CONF_UNIT, 1)))
         self.tariff = tariff_from_custom(d[CONF_CUSTOM]) if d[CONF_TARIFF] == "custom" else PRESETS[d[CONF_TARIFF]]
-        self._holidays = holidays.country_holidays(d[CONF_COUNTRY], subdiv=d.get(CONF_SUBDIV) or None)
+        self._holidays = None  # built off the event loop in async_load_holidays()
         self._last_write = "never"
+
+    async def async_load_holidays(self) -> None:
+        """The holidays library imports country modules lazily, which blocks; do it in a worker thread."""
+        d = self.entry.data
+        self._holidays = await self.hass.async_add_executor_job(
+            lambda: holidays.country_holidays(d[CONF_COUNTRY], subdiv=d.get(CONF_SUBDIV) or None))
 
     def _mode(self) -> str:
         o = self.entry.options
