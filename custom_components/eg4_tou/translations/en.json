@@ -5,12 +5,12 @@
         "title": "Gateway connection",
         "description": "The integration talks to your inverter through an RS485-to-Ethernet gateway (Modbus TCP, port 502). Your network was scanned for it (read-only; nothing is written).\n\n{scan_result}\n\nNext you will set up your tariff's peak hours, then choose read-only or read-write. No gateway yet, or not sure how to wire it? See the [wiring and setup guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html).",
         "data": {
-          "host": "Gateway (pick a discovered one or type an address)",
+          "host": "Gateway (pre-filled from the scan when one is detected)",
           "port": "Modbus TCP port",
           "unit": "Modbus unit id",
           "country": "Country code for holidays (e.g. US)",
           "subdiv": "State/region for holidays (optional, e.g. MD)",
-          "rescan": "Scan the network again"
+          "rescan": "Scan again: tick this, then press Submit (setup will not continue)"
         }
       },
       "mode": {

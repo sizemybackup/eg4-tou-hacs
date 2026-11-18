@@ -170,15 +170,21 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             self._found = {f.host: f for f in await async_scan(self.hass)}
         d = user_input or {}
         found = self._found
+        def _what(f):
+            return "looks like an EG4 inverter" if f.looks_like_eg4 else "port 502 open, not confirmed as EG4"
+
         if found:
             host_field = selector.SelectSelector(selector.SelectSelectorConfig(
-                options=[{"value": h, "label": f"{h}  ({'looks like an EG4 inverter' if f.looks_like_eg4 else 'port 502 open, not confirmed as EG4'})"}
-                         for h, f in found.items()],
+                options=[{"value": h, "label": f"{h}  (detected by scan: {_what(f)})"} for h, f in found.items()],
                 custom_value=True, mode=selector.SelectSelectorMode.DROPDOWN))
-            note = f"Found {len(found)} device(s) answering Modbus on your network. The first is pre-selected; change it or type your own address."
+            note = ("**Detected by the network scan:**\n"
+                    + "\n".join(f"- `{h}`: {_what(f)}" for h, f in found.items())
+                    + "\n\nThe Gateway field below is **pre-filled from this scan**. Change it if it is not "
+                      "your gateway, or type your own address.")
         else:
             host_field = str
-            note = "No gateway was found automatically. Type its address, and check that it is powered, on this network and set to Modbus port 502."
+            note = ("**The scan did not detect a gateway.** Type its address below, and check that it is powered, "
+                    "on this network and set to Modbus port 502.")
         schema = vol.Schema({
             vol.Required(CONF_HOST, default=d.get(CONF_HOST) or next(iter(found), "")): host_field,
             vol.Required(CONF_PORT, default=d.get(CONF_PORT, 502)): int,

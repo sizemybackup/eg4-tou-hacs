@@ -218,7 +218,9 @@ async def test_single_screen_prefills_discovered_gateway(hass: HomeAssistant, ga
         r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     assert r["step_id"] == "user"
     assert _default(r, "host") == "127.0.0.1" and _default(r, "port") == 502
-    assert "Found 2" in r["description_placeholders"]["scan_result"]
+    note = r["description_placeholders"]["scan_result"]
+    assert "Detected by the network scan" in note and "pre-filled from this scan" in note
+    assert "`127.0.0.1`: looks like an EG4 inverter" in note and "`127.0.0.2`: port 502 open, not confirmed" in note
     # accept the prefilled gateway on this same screen -> straight to the tariff step
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {
         "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
@@ -235,7 +237,7 @@ async def test_custom_address_still_works_when_scan_finds_something_else(hass: H
 
 async def test_nothing_found_shows_message_and_plain_field(hass: HomeAssistant):
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    assert "No gateway was found" in r["description_placeholders"]["scan_result"]
+    assert "did not detect a gateway" in r["description_placeholders"]["scan_result"]
     assert _default(r, "host") == ""
 
 
