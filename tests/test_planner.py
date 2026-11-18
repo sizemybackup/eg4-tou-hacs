@@ -170,3 +170,18 @@ def test_custom_tariff_can_ignore_public_holidays():
     base = {"seasons": {"winter": {"start": [1, 1], "end": [12, 31]}}, "peaks": {"winter": [["16:00", "20:00"]]}}
     assert tariff_from_custom(base).calendar_holidays is True                       # old entries keep behaviour
     assert tariff_from_custom({**base, "offpeak_holidays": False}).calendar_holidays is False
+
+
+def test_workday_options_tool_matches_the_lists_applied_to_the_owners_ha():
+    """tools/bge_workday_options.py reproduces the dates applied to the Workday sensor on 2026-11-18."""
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("bge_opts", Path(__file__).resolve().parent.parent / "tools" / "bge_workday_options.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    got = mod.lists(2026, 2026)
+    assert got["add_holidays"] == ["2026-04-03"]                                   # Good Friday
+    for d in ("2026-11-27", "2026-11-11", "2026-10-12", "2026-06-19", "2026-01-19"):
+        assert d in got["remove_holidays"], d                                      # not BGE holidays
+    for d in ("2026-11-26", "2026-12-25", "2026-09-07", "2026-05-25", "2026-02-16"):
+        assert d not in got["remove_holidays"], d                                  # real BGE holidays stay
