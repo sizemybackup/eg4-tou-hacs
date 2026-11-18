@@ -75,10 +75,7 @@ views:
             # battery_capacity_kwh: 32.1
             # soc_floor: 20
             # time_format: 12                                           # or 24
-          - type: heading
-            heading: Today's schedule
-            icon: mdi:chart-timeline
-          # 24-hour timeline (v0.5.0+); finds its sensor by itself.
+          # 24-hour timeline (v0.5.0+); finds its sensor by itself and has its own title.
           - type: custom:eg4-tou-timeline-card
           - type: heading
             heading: Today's rules
