@@ -2,16 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "Find your inverter's gateway",
-        "description": "The integration talks to your inverter through an RS485-to-Ethernet gateway (Modbus TCP, port 502). A scan looks at your local network for it. The scan only reads; it never writes anything.\n\nNo gateway yet, or not sure how to wire it? Follow the [wiring and setup guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html) (parts list, photos, gateway settings).",
-        "menu_options": {
-          "scan": "Scan my network for the gateway",
-          "manual": "Enter the address manually"
+        "title": "Gateway connection",
+        "description": "The integration talks to your inverter through an RS485-to-Ethernet gateway (Modbus TCP, port 502). Your network was scanned for it (read-only; nothing is written).\n\n{scan_result}\n\nNext you will set up your tariff's peak hours, then choose read-only or read-write. No gateway yet, or not sure how to wire it? See the [wiring and setup guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html).",
+        "data": {
+          "host": "Gateway (pick a discovered one or type an address)",
+          "port": "Modbus TCP port",
+          "unit": "Modbus unit id",
+          "country": "Country code for holidays (e.g. US)",
+          "subdiv": "State/region for holidays (optional, e.g. MD)",
+          "rescan": "Scan the network again"
         }
       },
       "mode": {
         "title": "Read-only or read-write?",
-        "description": "**Read-only (recommended first):** reads your inverter and shows, on the device page, exactly what the schedule WOULD change. Nothing is ever written. Use this to check the plan against your tariff before trusting it.\\n\\n**Read-write:** every 10 minutes the integration changes your inverter's AC-charge windows, AC First windows, charge limits and AC charge power to match the plan. You can switch between the two later with the 'Read-only mode' switch.",
+        "description": "**Read-only (recommended first):** reads your inverter and shows, on the device page, exactly what the schedule WOULD change. Nothing is ever written. Use this to check the plan against your tariff before trusting it.\n\n**Read-write:** every 10 minutes the integration changes your inverter's AC-charge windows, AC First windows, charge limits and AC charge power to match the plan. You can switch between the two later with the 'Read-only mode' switch.",
         "data": {
           "mode": "Mode"
         }
@@ -56,24 +60,6 @@
           "end": "Peak ends",
           "add_another": "Add a second peak window"
         }
-      },
-      "pick": {
-        "title": "Gateway found",
-        "description": "These devices answered on Modbus port 502. Pick your gateway.",
-        "data": {
-          "host": "Gateway"
-        }
-      },
-      "manual": {
-        "title": "Gateway connection",
-        "description": "Address of your RS485-to-Ethernet Modbus gateway. Next you will set up your tariff's peak hours, then choose read-only or read-write.\n\nWiring and gateway settings: [setup guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html).",
-        "data": {
-          "host": "Gateway IP address",
-          "port": "Modbus TCP port",
-          "unit": "Modbus unit id",
-          "country": "Country code for holidays (e.g. US)",
-          "subdiv": "State/region for holidays (optional, e.g. MD)"
-        }
       }
     },
     "error": {
@@ -83,8 +69,7 @@
       "season_full_year": "Summer cannot cover the whole year. Use 'one schedule all year' instead.",
       "peak_order": "The peak must end after it starts, on the same day. Midnight-crossing peaks: split them into two windows.",
       "peak_overlap": "The two peak windows overlap.",
-      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day.",
-      "nothing_found": "No Modbus gateway answered on port 502. Enter its address manually (check that it is powered, on this network, and set to Modbus TCP)."
+      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day."
     },
     "abort": {
       "already_configured": "This gateway is already configured."

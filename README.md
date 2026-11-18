@@ -55,10 +55,12 @@ tariff preset; AC First windows are derived automatically as the complement.
 1. HACS, Custom repositories, add this repo as type *Integration*.
 2. Install, restart Home Assistant.
 3. Settings, Devices & services, Add integration, "EG4 Local TOU Manager".
-4. Choose **Scan my network for the gateway** (or enter the address manually).
-   The scan checks your local /24 for devices with Modbus port 502 open, then
-   reads two registers to confirm one is an EG4. It only reads, and takes a few
-   seconds. Then confirm port (502), unit (1) and your country/state (for holidays).
+4. The first screen scans your local /24 for the gateway automatically (devices with
+   Modbus port 502 open, then two register reads to confirm an EG4; read-only, nothing
+   is written). Any gateway found is pre-selected in the **Gateway** field. Accept it, pick
+   another, or type your own address in the same field, and adjust port (502), unit (1) and
+   your country/state (for holidays) on the same screen. Tick "Scan the network again" to
+   rescan.
 5. Pick your tariff: the BGE preset, **custom summer + winter**, or **one schedule
    all year**. For custom schedules you enter the summer dates and 1-2 weekday
    on-peak windows per season. The 12000XP's three AC First windows can fence off

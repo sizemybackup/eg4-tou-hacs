@@ -8,6 +8,7 @@ from custom_components.eg4_tou.modbus import pack_time
 from tests.test_modbus import FakeGateway
 
 import pytest
+from unittest.mock import AsyncMock, patch
 
 
 @pytest.fixture
@@ -23,10 +24,17 @@ def entry_for(gw):
         "host": "127.0.0.1", "port": gw.port, "unit": 1, "tariff": "bge_rl", "country": "US", "subdiv": "MD"})
 
 
+@pytest.fixture(autouse=True)
+def _no_real_network_scan():
+    """Flow tests must never scan the real network; scan tests override this."""
+    with patch("custom_components.eg4_tou.config_flow.async_scan", AsyncMock(return_value=[])):
+        yield
+
+
 async def _manual(hass):
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    assert r["type"] == "menu"
-    return await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "manual"})
+    assert r["type"] == "form" and r["step_id"] == "user"
+    return r
 
 
 async def test_config_flow_creates_entry(hass: HomeAssistant, gateway):
@@ -197,26 +205,55 @@ async def test_options_flow_changes_tariff(hass: HomeAssistant, gateway):
     assert e.data["tariff"] == "custom" and e.data["custom_tariff"]["peaks"] == {"winter": [["18:00", "22:00"]]}
 
 
-from unittest.mock import patch
 from custom_components.eg4_tou.scanner import Found, scan_hosts
 
 
-async def test_scan_flow_picks_found_gateway(hass: HomeAssistant, gateway):
-    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    with patch("custom_components.eg4_tou.config_flow.async_scan",
-               return_value=[Found("127.0.0.1", True), Found("127.0.0.2", False)]):
-        r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "scan"})
-    assert r["step_id"] == "pick"
-    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"host": "127.0.0.1"})
-    assert r["step_id"] == "manual"
-    assert [k for k in r["data_schema"].schema if k == "host"][0].default() == "127.0.0.1"
+def _default(r, key):
+    return [k for k in r["data_schema"].schema if k == key][0].default()
 
 
-async def test_scan_nothing_found_falls_back_to_manual(hass: HomeAssistant):
+async def test_single_screen_prefills_discovered_gateway(hass: HomeAssistant, gateway):
+    found = [Found("127.0.0.1", True), Found("127.0.0.2", False)]
+    with patch("custom_components.eg4_tou.config_flow.async_scan", AsyncMock(return_value=found)):
+        r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    assert r["step_id"] == "user"
+    assert _default(r, "host") == "127.0.0.1" and _default(r, "port") == 502
+    assert "Found 2" in r["description_placeholders"]["scan_result"]
+    # accept the prefilled gateway on this same screen -> straight to the tariff step
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
+    assert r["step_id"] == "tariff"
+
+
+async def test_custom_address_still_works_when_scan_finds_something_else(hass: HomeAssistant, gateway):
+    with patch("custom_components.eg4_tou.config_flow.async_scan", AsyncMock(return_value=[Found("127.0.0.2", False)])):
+        r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": ""})  # typed, not discovered
+    assert r["step_id"] == "tariff"
+
+
+async def test_nothing_found_shows_message_and_plain_field(hass: HomeAssistant):
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    with patch("custom_components.eg4_tou.config_flow.async_scan", return_value=[]):
-        r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "scan"})
-    assert r["step_id"] == "manual" and r["errors"] == {"base": "nothing_found"}
+    assert "No gateway was found" in r["description_placeholders"]["scan_result"]
+    assert _default(r, "host") == ""
+
+
+async def test_scan_again_keeps_typed_values_and_refreshes(hass: HomeAssistant):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    with patch("custom_components.eg4_tou.config_flow.async_scan", AsyncMock(return_value=[Found("127.0.0.1", True)])):
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+            "host": "", "port": 5020, "unit": 3, "country": "CA", "subdiv": "ON", "rescan": True})
+    assert r["step_id"] == "user" and r["errors"] == {}
+    assert _default(r, "host") == "127.0.0.1"          # filled from the new scan
+    assert (_default(r, "port"), _default(r, "unit"), _default(r, "country")) == (5020, 3, "CA")  # kept
+
+
+async def test_unreachable_gateway_error_on_same_screen(hass: HomeAssistant):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "127.0.0.1", "port": 1, "unit": 1, "country": "US", "subdiv": ""})
+    assert r["step_id"] == "user" and r["errors"] == {"base": "cannot_connect"}
 
 
 async def test_scan_hosts_identifies_eg4_and_ignores_closed(gateway):
