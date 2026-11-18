@@ -32,7 +32,9 @@ tariff preset; AC First windows are derived automatically as the complement.
 
 A ready-made dashboard (core cards only, no custom JavaScript) is in
 [`dashboards/eg4_tou_dashboard.yaml`](dashboards/eg4_tou_dashboard.yaml): status tiles
-(mode, today's profile, settings out of sync), a **24-hour timeline** of today's on-peak hours,
+(mode, today's profile, settings out of sync), a **TOU & AC First Rules** status table (season and day type, billing window, next window, power
+source, grid charging, next charge and inverter schedule, all with live countdowns; add your battery
+sensors to the card to get Battery and Peak Reserve rows too), a **24-hour timeline** of today's on-peak hours,
 hold windows and overnight charge window (with a now marker, and the inverter's own windows
 drawn underneath if they differ from the plan), a **Today's rules** table showing for each
 rule the plan, what the inverter holds now and whether they match, the list of pending

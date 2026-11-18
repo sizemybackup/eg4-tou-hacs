@@ -18,7 +18,7 @@ from .const import (
     OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, SCAN_INTERVAL_MIN,
 )
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError, WriteRefused, unpack_time
-from .planner import PRESETS, Plan, Settings, build_plan, tariff_from_custom
+from .planner import PRESETS, Plan, Settings, build_plan, tariff_from_custom, week_schedule
 
 _LOGGER = logging.getLogger(__name__)
 READ_BLOCKS = ((66, 8), (152, 6), (160, 2))  # 66..73, 152..157, 160..161
@@ -33,6 +33,8 @@ class TouData:
     last_write: str = "never"
     peaks: str = ""
     peak_list: list = field(default_factory=list)
+    week: list = field(default_factory=list)
+    facts: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
 
 
@@ -61,6 +63,14 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         self._holidays = await self.hass.async_add_executor_job(
             lambda: holidays.country_holidays(d[CONF_COUNTRY], subdiv=d.get(CONF_SUBDIV) or None))
 
+    def _day_info(self, day):
+        """(is this an all-off-peak day, label) using weekends and the holiday calendar."""
+        holiday = self._holidays.get(day) if self._holidays is not None else None
+        weekend = day.weekday() >= 5
+        offpeak = self.tariff.offpeak_weekends and (weekend or holiday is not None)
+        label = f"Holiday: {holiday}" if holiday else ("Weekend" if weekend else "Workday")
+        return offpeak, label
+
     def _mode(self) -> str:
         o = self.entry.options
         if not o[OPT_ENABLED]:
@@ -81,7 +91,7 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
             raise UpdateFailed(f"inverter read failed: {exc}") from exc
 
         today = dt_util.now().date()
-        offpeak = self.tariff.offpeak_weekends and (today.weekday() >= 5 or today in self._holidays)
+        offpeak, _ = self._day_info(today)
         plan = build_plan(today, self.tariff, settings_from_options(self.entry.options),
                           offpeak_day=offpeak, current_end_soc=current.get(161))
         pending = plan.diff(current)
@@ -96,7 +106,11 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
                 pass  # next cycle will re-check; the write result is already recorded
         peak_list = [] if offpeak else [list(p) for p in self.tariff.peaks_for(today)]
         peaks = ", ".join(f"{a}-{b}" for a, b in peak_list) if not offpeak else "none (off-peak day)"
-        return TouData(current, plan, pending, mode, self._last_write, peaks, peak_list)
+        settings = settings_from_options(self.entry.options)
+        facts = {"mode": mode, "out_of_sync": len(pending), "start_soc": plan.registers[160],
+                 "end_soc": plan.registers[161], "ac_kw": plan.registers[66] / 10}
+        week = week_schedule(today, self.tariff, settings, self._day_info)
+        return TouData(current, plan, pending, mode, self._last_write, peaks, peak_list, week, facts)
 
     async def _apply(self, pending) -> str:
         done = []

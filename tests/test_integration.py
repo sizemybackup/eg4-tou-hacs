@@ -291,10 +291,15 @@ async def test_timeline_card_is_served_and_registered(hass: HomeAssistant, hass_
     assert await hass.config_entries.async_setup(e.entry_id)
     await hass.async_block_till_done()
     client = await hass_client()
-    r = await client.get("/eg4_tou/eg4-tou-timeline-card.js")
-    assert r.status == 200
-    body = await r.text()
-    assert 'customElements.define("eg4-tou-timeline-card"' in body
+    for name, tag in (("eg4-tou-timeline-card.js", "eg4-tou-timeline-card"), ("eg4-tou-rules-card.js", "eg4-tou-rules-card")):
+        r = await client.get(f"/eg4_tou/{name}")
+        assert r.status == 200
+        assert f'customElements.define("{tag}"' in await r.text()
     tl = hass.states.get("sensor.eg4_tou_active_profile").attributes["timeline"]
     assert tl["peaks"] and tl["hold"]["plan"] and tl["charge"]["plan"]
-    assert any(u.startswith("/eg4_tou/eg4-tou-timeline-card.js?v=") for u in hass.data["frontend_extra_module_url"].urls)
+    urls = hass.data["frontend_extra_module_url"].urls
+    assert any(u.startswith("/eg4_tou/eg4-tou-timeline-card.js?v=") for u in urls)
+    assert any(u.startswith("/eg4_tou/eg4-tou-rules-card.js?v=") for u in urls)
+    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
+    assert len(a["week"]) == 8 and a["week"][0]["peaks"] is not None
+    assert a["facts"]["mode"] == "off" and a["facts"]["start_soc"] == 65

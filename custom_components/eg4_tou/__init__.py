@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from .const import DEFAULT_OPTIONS, DOMAIN, PLATFORMS
 
-CARD_URL = "/eg4_tou/eg4-tou-timeline-card.js"
-CARD_FILE = Path(__file__).parent / "frontend" / "eg4-tou-timeline-card.js"
+FRONTEND_DIR = Path(__file__).parent / "frontend"
+CARD_FILES = ("eg4-tou-timeline-card.js", "eg4-tou-rules-card.js")
 
 if TYPE_CHECKING:  # keep HA imports out of module scope so the pure logic is testable
     from homeassistant.config_entries import ConfigEntry
@@ -15,14 +15,16 @@ if TYPE_CHECKING:  # keep HA imports out of module scope so the pure logic is te
 
 
 async def async_setup(hass: "HomeAssistant", config: dict) -> bool:
-    """Serve the timeline card and load it on every dashboard page (once per HA run)."""
+    """Serve the dashboard cards and load them on every dashboard page (once per HA run)."""
     from homeassistant.components.frontend import add_extra_js_url
     from homeassistant.components.http import StaticPathConfig
     from homeassistant.loader import async_get_integration
 
     version = (await async_get_integration(hass, DOMAIN)).version
-    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(CARD_FILE), cache_headers=False)])
-    add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(f"/eg4_tou/{name}", str(FRONTEND_DIR / name), cache_headers=False) for name in CARD_FILES])
+    for name in CARD_FILES:
+        add_extra_js_url(hass, f"/eg4_tou/{name}?v={version}")
     return True
 
 

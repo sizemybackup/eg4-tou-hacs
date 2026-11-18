@@ -1,6 +1,6 @@
 # EG4 Local TOU Manager: ready-made dashboard (core cards only, no custom JavaScript).
 #
-# Needs integration v0.5.0+ for the timeline card (the integration loads it by itself).
+# Needs integration v0.6.0+ for the two custom cards (the integration loads them by itself).
 # Install: Settings > Dashboards > Add dashboard > "New dashboard from scratch", open it,
 # three dots > Edit dashboard > three dots > Raw configuration editor, and paste this file.
 #
@@ -61,9 +61,24 @@ views:
       - type: grid
         cards:
           - type: heading
+            heading: TOU & AC First Rules
+            icon: mdi:calendar-clock
+          # Status table with live countdowns (v0.6.0+); finds its sensor by itself.
+          # Season, billing window, next window, power source, grid charging, next charge and
+          # inverter schedule need nothing else. To also get Battery and Peak Reserve rows, add
+          # your own battery sensors (names below are examples, use yours):
+          - type: custom:eg4-tou-rules-card
+            # battery_soc_entity: sensor.my_battery_soc                  # %
+            # battery_charge_power_entity: sensor.my_battery_charge_w    # W
+            # battery_discharge_power_entity: sensor.my_battery_discharge_w
+            # load_power_entity: sensor.my_house_load_w                  # W, for Peak Reserve
+            # battery_capacity_kwh: 32.1
+            # soc_floor: 20
+            # time_format: 12                                           # or 24
+          - type: heading
             heading: Today's schedule
             icon: mdi:chart-timeline
-          # 24-hour timeline, served by the integration (v0.5.0+); finds its sensor by itself.
+          # 24-hour timeline (v0.5.0+); finds its sensor by itself.
           - type: custom:eg4-tou-timeline-card
           - type: heading
             heading: Today's rules

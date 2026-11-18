@@ -214,6 +214,29 @@ def rules_table(plan: Plan, current: dict[int, int], peaks_text: str) -> list[di
     return rows
 
 
+def week_schedule(start: date, tariff: Tariff, settings: Settings, day_info, days: int = 8) -> list[dict]:
+    """The next `days` days of schedule, for cards that count down to the next event.
+
+    day_info(day) -> (offpeak_day: bool, day_type_label: str). Hold and charge windows are the
+    PLAN for that day (the card substitutes the inverter's own windows for today).
+    """
+    out = []
+    for i in range(days):
+        d = start + timedelta(days=i)
+        offpeak, label = day_info(d)
+        plan = build_plan(d, tariff, settings, offpeak_day=offpeak)
+        out.append({
+            "date": d.isoformat(),
+            "dow": d.strftime("%a"),
+            "season": tariff.season_for(d),
+            "day_type": label,
+            "peaks": [] if offpeak else [list(p) for p in tariff.peaks_for(d)],
+            "hold": _window_list(plan.registers, 152),
+            "charge": _window_list(plan.registers, 68),
+        })
+    return out
+
+
 # ---- Custom tariffs -----------------------------------------------------
 
 def validate_peaks(peaks: list[tuple[str, str]]) -> str | None:

@@ -27,6 +27,8 @@ class ProfileSensor(TouEntity, SensorEntity):
         return {"peak_windows": d.peaks,
                 "rules": rules_table(d.plan, d.current, d.peaks),
                 "timeline": timeline(d.plan, d.current, d.peak_list),
+                "week": d.week,
+                "facts": d.facts,
                 **{f"reg_{r}": self.coordinator.describe(r, v) for r, v in d.plan.registers.items()}}
 
 

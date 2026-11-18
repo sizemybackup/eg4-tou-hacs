@@ -123,3 +123,25 @@ def test_timeline_structured_windows():
     cur = dict(p.registers); del cur[152]
     assert timeline(p, cur, [])["hold"]["inverter"] is None      # unread -> None, not a wrong bar
     assert timeline(p, cur, [])["peaks"] == []
+
+
+def test_week_schedule_weekends_holidays_and_season_change():
+    from datetime import timedelta
+    from custom_components.eg4_tou.planner import week_schedule
+    hol = {date(2026, 11, 26): "Thanksgiving"}
+
+    def info(d):
+        h = hol.get(d)
+        wk = d.weekday() >= 5
+        return (wk or h is not None), (f"Holiday: {h}" if h else ("Weekend" if wk else "Workday"))
+
+    w = week_schedule(date(2026, 11, 24), BGE_RL, Settings(), info)       # Tue
+    assert [d["dow"] for d in w] == ["Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue"]
+    assert w[0]["day_type"] == "Workday" and w[0]["peaks"] == [["07:00", "11:00"], ["17:00", "21:00"]]
+    assert w[2]["day_type"] == "Holiday: Thanksgiving" and w[2]["peaks"] == [] and w[2]["hold"] == [["00:00", "23:59"]]
+    assert w[4]["day_type"] == "Weekend" and w[4]["peaks"] == []
+    assert w[6]["peaks"] == [["07:00", "11:00"], ["17:00", "21:00"]]        # Monday is back to peaks
+    s = week_schedule(date(2026, 5, 30), BGE_RL, Settings(), info)           # crosses winter -> summer
+    assert [d["season"] for d in s][:3] == ["winter", "winter", "summer"]
+    assert s[2]["peaks"] == [["10:00", "20:00"]]                              # Mon Jun 1: summer weekday peak
+    assert w[0]["charge"] == [["01:00", "05:00"]]
