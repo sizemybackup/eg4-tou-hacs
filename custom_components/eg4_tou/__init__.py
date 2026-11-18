@@ -4,6 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# Imported at module level on purpose: Home Assistant's loader imports this module in a worker
+# thread, so the `holidays` library's file reads at import time do not block the event loop.
+from .coordinator import TouCoordinator
 from .const import DEFAULT_OPTIONS, DOMAIN, PLATFORMS
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -29,8 +32,6 @@ async def async_setup(hass: "HomeAssistant", config: dict) -> bool:
 
 
 async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
-    from .coordinator import TouCoordinator
-
     missing = {k: v for k, v in DEFAULT_OPTIONS.items() if k not in entry.options}
     if missing:
         hass.config_entries.async_update_entry(entry, options={**entry.options, **missing})
