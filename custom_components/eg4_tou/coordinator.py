@@ -13,12 +13,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_COUNTRY, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT, DOMAIN,
+    CONF_COUNTRY, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT, DOMAIN,
     OPT_AC_KW, OPT_CHARGE_END, OPT_CHARGE_START, OPT_DRY_RUN, OPT_ENABLED,
     OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, SCAN_INTERVAL_MIN,
 )
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError, WriteRefused, unpack_time
-from .planner import PRESETS, Plan, Settings, build_plan
+from .planner import PRESETS, Plan, Settings, build_plan, tariff_from_custom
 
 _LOGGER = logging.getLogger(__name__)
 READ_BLOCKS = ((66, 8), (152, 6), (160, 2))  # 66..73, 152..157, 160..161
@@ -50,7 +50,7 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         self.entry = entry
         d = entry.data
         self.client = Eg4Modbus(ModbusConfig(d[CONF_HOST], d.get(CONF_PORT, 502), d.get(CONF_UNIT, 1)))
-        self.tariff = PRESETS[d[CONF_TARIFF]]
+        self.tariff = tariff_from_custom(d[CONF_CUSTOM]) if d[CONF_TARIFF] == "custom" else PRESETS[d[CONF_TARIFF]]
         self._holidays = holidays.country_holidays(d[CONF_COUNTRY], subdiv=d.get(CONF_SUBDIV) or None)
         self._last_write = "never"
 
@@ -74,7 +74,7 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
             raise UpdateFailed(f"inverter read failed: {exc}") from exc
 
         today = dt_util.now().date()
-        offpeak = today.weekday() >= 5 or today in self._holidays
+        offpeak = self.tariff.offpeak_weekends and (today.weekday() >= 5 or today in self._holidays)
         plan = build_plan(today, self.tariff, settings_from_options(self.entry.options),
                           offpeak_day=offpeak, current_end_soc=current.get(161))
         pending = plan.diff(current)

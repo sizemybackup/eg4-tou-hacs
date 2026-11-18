@@ -27,8 +27,9 @@ async def test_config_flow_creates_entry(hass: HomeAssistant, gateway):
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     assert r["type"] == "form"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {
-        "host": "127.0.0.1", "port": gateway.port, "unit": 1,
-        "tariff": "bge_rl", "country": "US", "subdiv": "MD"})
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
+    assert r["step_id"] == "tariff"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True})
     assert r["step_id"] == "mode"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
     assert r["type"] == "create_entry"
@@ -37,9 +38,9 @@ async def test_config_flow_creates_entry(hass: HomeAssistant, gateway):
 
 async def _to_mode(hass, gateway):
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    return await hass.config_entries.flow.async_configure(r["flow_id"], {
-        "host": "127.0.0.1", "port": gateway.port, "unit": 1,
-        "tariff": "bge_rl", "country": "US", "subdiv": "MD"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
+    return await hass.config_entries.flow.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True})
 
 
 async def test_read_write_requires_confirmation(hass: HomeAssistant, gateway):
@@ -66,7 +67,7 @@ async def test_read_only_flow_never_writes(hass: HomeAssistant, gateway):
 async def test_config_flow_unreachable(hass: HomeAssistant):
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {
-        "host": "127.0.0.1", "port": 1, "unit": 1, "tariff": "bge_rl", "country": "US", "subdiv": ""})
+        "host": "127.0.0.1", "port": 1, "unit": 1, "country": "US", "subdiv": ""})
     assert r["type"] == "form" and r["errors"] == {"base": "cannot_connect"}
 
 
@@ -105,3 +106,86 @@ async def test_live_mode_converges_then_stays_quiet(hass: HomeAssistant, gateway
     # end SOC lowered 90 -> target: start SOC (160) must be written before end SOC (161)
     regs = [r for r, _ in gateway.writes]
     assert regs.index(160) < regs.index(161)
+
+
+async def _custom_start(hass, gateway, kind):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
+    return await hass.config_entries.flow.async_configure(r["flow_id"], {"tariff": kind, "offpeak_weekends": True})
+
+
+async def test_custom_seasonal_flow_builds_tariff(hass: HomeAssistant, gateway):
+    f = hass.config_entries.flow
+    r = await _custom_start(hass, gateway, "seasonal")
+    assert r["step_id"] == "summer_dates"
+    r = await f.async_configure(r["flow_id"], {"start_month": 5, "start_day": 15, "end_month": 9, "end_day": 15})
+    assert r["step_id"] == "peak" and r["description_placeholders"]["season"] == "summer"
+    r = await f.async_configure(r["flow_id"], {"start": "14:00:00", "end": "19:00:00", "add_another": False})
+    assert r["step_id"] == "peak" and r["description_placeholders"]["season"] == "winter"
+    r = await f.async_configure(r["flow_id"], {"start": "06:00:00", "end": "09:00:00", "add_another": True})
+    assert r["description_placeholders"]["n"] == "2"
+    r = await f.async_configure(r["flow_id"], {"start": "17:00:00", "end": "20:00:00"})
+    assert r["step_id"] == "mode"
+    r = await f.async_configure(r["flow_id"], {"mode": "read_only"})
+    c = r["data"]["custom_tariff"]
+    assert r["data"]["tariff"] == "custom"
+    assert c["seasons"]["winter"] == {"start": [9, 16], "end": [5, 14]}
+    assert c["peaks"] == {"summer": [["14:00", "19:00"]], "winter": [["06:00", "09:00"], ["17:00", "20:00"]]}
+
+
+async def test_custom_single_flow(hass: HomeAssistant, gateway):
+    f = hass.config_entries.flow
+    r = await _custom_start(hass, gateway, "single")
+    assert r["step_id"] == "single_kind"
+    r = await f.async_configure(r["flow_id"], {"kind": "summer"})
+    r = await f.async_configure(r["flow_id"], {"start": "16:00:00", "end": "21:00:00", "add_another": False})
+    r = await f.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["data"]["custom_tariff"]["peaks"] == {"summer": [["16:00", "21:00"]]}
+
+
+async def test_peak_validation_errors(hass: HomeAssistant, gateway):
+    f = hass.config_entries.flow
+    r = await _custom_start(hass, gateway, "single")
+    r = await f.async_configure(r["flow_id"], {"kind": "winter"})
+    r = await f.async_configure(r["flow_id"], {"start": "20:00:00", "end": "17:00:00", "add_another": False})
+    assert r["errors"] == {"base": "peak_order"}
+    r = await f.async_configure(r["flow_id"], {"start": "07:00:00", "end": "11:00:00", "add_another": True})
+    r = await f.async_configure(r["flow_id"], {"start": "10:00:00", "end": "12:00:00"})
+    assert r["errors"] == {"base": "peak_overlap"}
+
+
+async def test_summer_cannot_be_whole_year(hass: HomeAssistant, gateway):
+    r = await _custom_start(hass, gateway, "seasonal")
+    r = await hass.config_entries.flow.async_configure(
+        r["flow_id"], {"start_month": 1, "start_day": 1, "end_month": 12, "end_day": 31})
+    assert r["errors"] == {"base": "season_full_year"}
+
+
+async def test_custom_tariff_drives_the_inverter_plan(hass: HomeAssistant, gateway):
+    e = MockConfigEntry(domain=DOMAIN, unique_id="c", data={
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "tariff": "custom", "country": "US", "subdiv": "",
+        "custom_tariff": {"offpeak_weekends": False,
+                          "seasons": {"winter": {"start": [1, 1], "end": [12, 31]}},
+                          "peaks": {"winter": [["16:00", "20:00"]]}}},
+        options={"enabled": True, "dry_run": False})
+    e.add_to_hass(hass)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    assert gateway.regs.get(152, 0) == pack_time("00:00") and gateway.regs[153] == pack_time("16:00")
+    assert gateway.regs[154] == pack_time("20:00") and gateway.regs[155] == pack_time("23:59")
+
+
+async def test_options_flow_changes_tariff(hass: HomeAssistant, gateway):
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    f = hass.config_entries.options
+    r = await f.async_init(e.entry_id)
+    assert r["step_id"] == "tariff"
+    r = await f.async_configure(r["flow_id"], {"tariff": "single", "offpeak_weekends": True})
+    r = await f.async_configure(r["flow_id"], {"kind": "winter"})
+    r = await f.async_configure(r["flow_id"], {"start": "18:00:00", "end": "22:00:00", "add_another": False})
+    assert r["type"] == "create_entry"
+    assert e.data["tariff"] == "custom" and e.data["custom_tariff"]["peaks"] == {"winter": [["18:00", "22:00"]]}

@@ -1,18 +1,148 @@
-"""Setup form: where the gateway is, which tariff, which country for holidays.
-Everything else (SOC limits, charge window, power) lives in entities."""
+"""Setup: gateway connection -> tariff (preset or custom peak windows) -> mode.
+
+The tariff steps are a mixin shared with the options flow, so users can change
+their schedule later from the integration's Configure button.
+"""
 from __future__ import annotations
+
+from datetime import date
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.core import callback
+from homeassistant.helpers import selector
 
-from .const import (CONF_COUNTRY, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT, DOMAIN,
-                    OPT_DRY_RUN, OPT_ENABLED)
+from .const import (CONF_COUNTRY, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
+                    DOMAIN, OPT_DRY_RUN, OPT_ENABLED)
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
-from .planner import PRESETS
+from .planner import MAX_PEAKS_PER_DAY, PRESETS, tariff_from_custom, validate_peaks, winter_dates
+
+TARIFF_CHOICES = {
+    **{k: t.name for k, t in PRESETS.items()},
+    "seasonal": "Custom: separate summer and winter schedules",
+    "single": "Custom: one schedule all year",
+}
+_TIME = selector.TimeSelector()
 
 
-class Eg4TouConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+def _hhmm(value: str) -> str:
+    return value[:5]
+
+
+def _peak_schema(start: str, end: str, allow_more: bool) -> vol.Schema:
+    fields = {
+        vol.Required("start", default=start): _TIME,
+        vol.Required("end", default=end): _TIME,
+    }
+    if allow_more:
+        fields[vol.Required("add_another", default=False)] = bool
+    return vol.Schema(fields)
+
+
+class _TariffSteps:
+    """Mixin. Subclasses implement _tariff_done(tariff_key, custom_or_None)."""
+
+    _kind: str
+    _todo: list[str]
+    _custom: dict
+    _peaks: dict[str, list[tuple[str, str]]]
+    _cur_peaks: list[tuple[str, str]]
+
+    def _begin_tariff(self):
+        self._custom, self._peaks, self._cur_peaks, self._todo = {}, {}, [], []
+        return self.async_step_tariff()
+
+    async def async_step_tariff(self, user_input=None):
+        if user_input is not None:
+            choice = user_input[CONF_TARIFF]
+            if choice in PRESETS:
+                return await self._tariff_done(choice, None)
+            self._kind = choice
+            self._custom["offpeak_weekends"] = user_input["offpeak_weekends"]
+            if choice == "seasonal":
+                return await self.async_step_summer_dates()
+            return await self.async_step_single_kind()
+        schema = vol.Schema({
+            vol.Required(CONF_TARIFF, default="bge_rl"): vol.In(TARIFF_CHOICES),
+            vol.Required("offpeak_weekends", default=True): bool,
+        })
+        return self.async_show_form(step_id="tariff", data_schema=schema)
+
+    async def async_step_summer_dates(self, user_input=None):
+        errors = {}
+        if user_input is not None:
+            try:
+                a = (int(user_input["start_month"]), int(user_input["start_day"]))
+                b = (int(user_input["end_month"]), int(user_input["end_day"]))
+                date(2024, *a), date(2024, *b)
+                w = winter_dates(a, b)
+            except ValueError:
+                errors["base"] = "bad_date"
+            else:
+                if w is None:
+                    errors["base"] = "season_full_year"
+                else:
+                    self._custom["seasons"] = {
+                        "summer": {"start": list(a), "end": list(b)},
+                        "winter": {"start": list(w[0]), "end": list(w[1])},
+                    }
+                    self._todo = ["summer", "winter"]
+                    return await self.async_step_peak()
+        month = vol.All(vol.Coerce(int), vol.Range(min=1, max=12))
+        day = vol.All(vol.Coerce(int), vol.Range(min=1, max=31))
+        schema = vol.Schema({
+            vol.Required("start_month", default=6): month, vol.Required("start_day", default=1): day,
+            vol.Required("end_month", default=9): month, vol.Required("end_day", default=30): day,
+        })
+        return self.async_show_form(step_id="summer_dates", data_schema=schema, errors=errors)
+
+    async def async_step_single_kind(self, user_input=None):
+        if user_input is not None:
+            name = user_input["kind"]
+            self._custom["seasons"] = {name: {"start": [1, 1], "end": [12, 31]}}
+            self._todo = [name]
+            return await self.async_step_peak()
+        schema = vol.Schema({vol.Required("kind", default="winter"): vol.In({
+            "summer": "Summer-style (uses the 'summer weekday' charge limit)",
+            "winter": "Winter-style (uses the 'winter weekday' charge limit)"})})
+        return self.async_show_form(step_id="single_kind", data_schema=schema)
+
+    async def async_step_peak(self, user_input=None):
+        """On-peak window(s) for the season at the front of self._todo."""
+        season = self._todo[0]
+        errors = {}
+        n = len(self._cur_peaks) + 1
+        if user_input is not None:
+            self._cur_peaks.append((_hhmm(user_input["start"]), _hhmm(user_input["end"])))
+            err = validate_peaks(self._cur_peaks)
+            if err:
+                self._cur_peaks.pop()
+                errors["base"] = err
+            elif user_input.get("add_another") and len(self._cur_peaks) < MAX_PEAKS_PER_DAY:
+                return await self.async_step_peak()
+            else:
+                self._peaks[season] = self._cur_peaks
+                self._cur_peaks = []
+                self._todo.pop(0)
+                if self._todo:
+                    return await self.async_step_peak()
+                self._custom["peaks"] = {k: [list(w) for w in v] for k, v in self._peaks.items()}
+                tariff_from_custom(self._custom)  # final sanity check
+                return await self._tariff_done("custom", self._custom)
+        default_start, default_end = ("07:00:00", "11:00:00") if n == 1 else ("17:00:00", "21:00:00")
+        return self.async_show_form(
+            step_id="peak", data_schema=_peak_schema(default_start, default_end, n < MAX_PEAKS_PER_DAY),
+            description_placeholders={"season": season, "n": str(n), "max": str(MAX_PEAKS_PER_DAY)},
+            errors=errors)
+
+
+class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        return Eg4TouOptionsFlow()
 
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
@@ -25,18 +155,23 @@ class Eg4TouConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except ModbusError:
                 errors["base"] = "cannot_connect"
             else:
-                self._data = user_input
-                return await self.async_step_mode()
+                self._data = dict(user_input)
+                return await self._begin_tariff()
 
         schema = vol.Schema({
             vol.Required(CONF_HOST): str,
             vol.Required(CONF_PORT, default=502): int,
             vol.Required(CONF_UNIT, default=1): int,
-            vol.Required(CONF_TARIFF, default="bge_rl"): vol.In({k: t.name for k, t in PRESETS.items()}),
             vol.Required(CONF_COUNTRY, default=self.hass.config.country or "US"): str,
             vol.Optional(CONF_SUBDIV, default=""): str,
         })
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def _tariff_done(self, key, custom):
+        self._data[CONF_TARIFF] = key
+        if custom:
+            self._data[CONF_CUSTOM] = custom
+        return await self.async_step_mode()
 
     async def async_step_mode(self, user_input=None):
         if user_input is not None:
@@ -59,3 +194,19 @@ class Eg4TouConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title=f"EG4 TOU ({self._data[CONF_HOST]})", data=self._data,
             options={OPT_ENABLED: True, OPT_DRY_RUN: read_only})
+
+
+class Eg4TouOptionsFlow(_TariffSteps, config_entries.OptionsFlow):
+    """Configure button: re-run the tariff steps and reload."""
+
+    async def async_step_init(self, user_input=None):
+        return await self._begin_tariff()
+
+    async def _tariff_done(self, key, custom):
+        data = {k: v for k, v in self.config_entry.data.items() if k != CONF_CUSTOM}
+        data[CONF_TARIFF] = key
+        if custom:
+            data[CONF_CUSTOM] = custom
+        self.hass.config_entries.async_update_entry(self.config_entry, data=data)
+        self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+        return self.async_create_entry(data=dict(self.config_entry.options))

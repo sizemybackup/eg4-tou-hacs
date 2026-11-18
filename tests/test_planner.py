@@ -70,3 +70,26 @@ def test_more_than_two_peaks_rejected():
 
 def test_pack_roundtrip():
     assert unpack_time(pack_time("17:45")) == "17:45"
+
+
+def test_validate_peaks_and_winter_dates():
+    from custom_components.eg4_tou.planner import validate_peaks, winter_dates, tariff_from_custom
+    assert validate_peaks([("07:00", "11:00"), ("17:00", "21:00")]) is None
+    assert validate_peaks([("07:00", "11:00"), ("10:00", "12:00")]) == "peak_overlap"
+    assert validate_peaks([("11:00", "07:00")]) == "peak_order"
+    assert validate_peaks([("01:00", "02:00"), ("03:00", "04:00"), ("05:00", "06:00")]) == "too_many_peaks"
+    assert winter_dates((6, 1), (9, 30)) == ((10, 1), (5, 31))
+    assert winter_dates((1, 1), (12, 31)) is None
+    with pytest.raises(ValueError):
+        tariff_from_custom({"seasons": {"winter": {"start": [1, 1], "end": [12, 31]}},
+                            "peaks": {"winter": [["12:00", "11:00"]]}})
+
+
+def test_custom_tariff_matches_bge_preset_output():
+    from custom_components.eg4_tou.planner import tariff_from_custom
+    t = tariff_from_custom({
+        "seasons": {"summer": {"start": [6, 1], "end": [9, 30]}, "winter": {"start": [10, 1], "end": [5, 31]}},
+        "peaks": {"summer": [["10:00", "20:00"]], "winter": [["07:00", "11:00"], ["17:00", "21:00"]]}})
+    for d in (date(2026, 7, 15), date(2026, 12, 2)):
+        assert build_plan(d, t, Settings(), offpeak_day=False).registers == \
+               build_plan(d, BGE_RL, Settings(), offpeak_day=False).registers

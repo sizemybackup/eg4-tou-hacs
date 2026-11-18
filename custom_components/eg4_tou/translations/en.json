@@ -3,12 +3,11 @@
     "step": {
       "user": {
         "title": "EG4 Local TOU Manager",
-        "description": "Enter the address of your RS485-to-Ethernet Modbus gateway.",
+        "description": "Enter the address of your RS485-to-Ethernet Modbus gateway. Next you will set up your tariff's peak hours, then choose read-only or read-write.",
         "data": {
           "host": "Gateway IP address",
           "port": "Modbus TCP port",
           "unit": "Modbus unit id",
-          "tariff": "Utility tariff",
           "country": "Country code for holidays (e.g. US)",
           "subdiv": "State/region for holidays (optional, e.g. MD)"
         }
@@ -26,14 +25,103 @@
         "data": {
           "understood": "I understand and want to enable writes"
         }
+      },
+      "tariff": {
+        "title": "Time-of-use tariff",
+        "description": "Pick a ready-made tariff, or define your own peak hours.\n\nThe 12000XP can hold the battery (so the grid carries the house) around **up to 2 on-peak windows per day** per schedule. Custom schedules let you enter 1 or 2 windows for each season. Charging happens overnight and the battery is spent only inside the peak windows.",
+        "data": {
+          "tariff": "Tariff",
+          "offpeak_weekends": "Treat weekends and holidays as all off-peak"
+        }
+      },
+      "summer_dates": {
+        "title": "When is summer?",
+        "description": "Enter the first and last day of your **summer** rate season. Every other day is treated as winter.",
+        "data": {
+          "start_month": "Summer starts: month (1-12)",
+          "start_day": "Summer starts: day",
+          "end_month": "Summer ends: month (1-12)",
+          "end_day": "Summer ends: day"
+        }
+      },
+      "single_kind": {
+        "title": "Which charge limit applies?",
+        "description": "A single all-year schedule still uses one of the two weekday charge limits (you can change the limits afterwards).",
+        "data": {
+          "kind": "Schedule style"
+        }
+      },
+      "peak": {
+        "title": "On-peak window {n} of up to {max} ({season})",
+        "description": "Enter the weekday on-peak hours for **{season}** (24-hour clock, start must be before end, same day). Tick 'Add a second window' if there is another peak later in the day, for example a morning and an evening peak.",
+        "data": {
+          "start": "Peak starts",
+          "end": "Peak ends",
+          "add_another": "Add a second peak window"
+        }
       }
     },
     "error": {
       "cannot_connect": "Could not read the inverter through that gateway.",
-      "must_confirm": "Tick the box to enable read-write, or go back and choose read-only."
+      "must_confirm": "Tick the box to enable read-write, or go back and choose read-only.",
+      "bad_date": "That is not a valid date.",
+      "season_full_year": "Summer cannot cover the whole year. Use 'one schedule all year' instead.",
+      "peak_order": "The peak must end after it starts, on the same day. Midnight-crossing peaks: split them into two windows.",
+      "peak_overlap": "The two peak windows overlap.",
+      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day."
     },
     "abort": {
       "already_configured": "This gateway is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tariff"
+      },
+      "tariff": {
+        "title": "Time-of-use tariff",
+        "description": "Pick a ready-made tariff, or define your own peak hours.\n\nThe 12000XP can hold the battery (so the grid carries the house) around **up to 2 on-peak windows per day** per schedule. Custom schedules let you enter 1 or 2 windows for each season. Charging happens overnight and the battery is spent only inside the peak windows.",
+        "data": {
+          "tariff": "Tariff",
+          "offpeak_weekends": "Treat weekends and holidays as all off-peak"
+        }
+      },
+      "summer_dates": {
+        "title": "When is summer?",
+        "description": "Enter the first and last day of your **summer** rate season. Every other day is treated as winter.",
+        "data": {
+          "start_month": "Summer starts: month (1-12)",
+          "start_day": "Summer starts: day",
+          "end_month": "Summer ends: month (1-12)",
+          "end_day": "Summer ends: day"
+        }
+      },
+      "single_kind": {
+        "title": "Which charge limit applies?",
+        "description": "A single all-year schedule still uses one of the two weekday charge limits (you can change the limits afterwards).",
+        "data": {
+          "kind": "Schedule style"
+        }
+      },
+      "peak": {
+        "title": "On-peak window {n} of up to {max} ({season})",
+        "description": "Enter the weekday on-peak hours for **{season}** (24-hour clock, start must be before end, same day). Tick 'Add a second window' if there is another peak later in the day, for example a morning and an evening peak.",
+        "data": {
+          "start": "Peak starts",
+          "end": "Peak ends",
+          "add_another": "Add a second peak window"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not read the inverter through that gateway.",
+      "must_confirm": "Tick the box to enable read-write, or go back and choose read-only.",
+      "bad_date": "That is not a valid date.",
+      "season_full_year": "Summer cannot cover the whole year. Use 'one schedule all year' instead.",
+      "peak_order": "The peak must end after it starts, on the same day. Midnight-crossing peaks: split them into two windows.",
+      "peak_overlap": "The two peak windows overlap.",
+      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day."
     }
   }
 }

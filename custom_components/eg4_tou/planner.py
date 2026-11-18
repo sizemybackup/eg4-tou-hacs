@@ -43,6 +43,7 @@ class Tariff:
     shift_season: str | None = None
     shift_hours: int = 0
     shift_fn: Callable[[date], bool] | None = None
+    offpeak_weekends: bool = True  # weekends and holidays are all off-peak
 
     def season_for(self, day: date) -> str:
         for season in self.seasons:
@@ -156,6 +157,52 @@ def build_plan(
 
 def next_day(day: date) -> date:
     return day + timedelta(days=1)
+
+
+# ---- Custom tariffs -----------------------------------------------------
+
+def validate_peaks(peaks: list[tuple[str, str]]) -> str | None:
+    """Return an error key, or None if the on-peak windows are usable."""
+    if len(peaks) > MAX_PEAKS_PER_DAY:
+        return "too_many_peaks"
+    for start, end in peaks:
+        if not start < end:
+            return "peak_order"          # end must be after start, same day
+    ordered = sorted(peaks)
+    for (_, e1), (s2, _) in zip(ordered, ordered[1:]):
+        if s2 < e1:
+            return "peak_overlap"
+    return None
+
+
+def winter_dates(summer_start: tuple[int, int], summer_end: tuple[int, int]):
+    """The rest of the year: from the day after summer ends to the day before
+    it starts. Returns None if summer would cover the whole year."""
+    a = date(2024, *summer_start)  # leap year so Feb 29 is a valid input
+    b = date(2024, *summer_end)
+    w_start, w_end = b + timedelta(days=1), a - timedelta(days=1)
+    if (w_start.month, w_start.day) == (a.month, a.day) or (w_end.month, w_end.day) == (b.month, b.day):
+        return None
+    return (w_start.month, w_start.day), (w_end.month, w_end.day)
+
+
+def tariff_from_custom(c: dict) -> Tariff:
+    """Build a Tariff from the dict the setup flow stores.
+
+    {"seasons": {"summer": {"start": [6,1], "end": [9,30]}, "winter": {...}},
+     "peaks": {"summer": [["10:00","20:00"]], "winter": [[...], [...]]},
+     "offpeak_weekends": true}
+    """
+    seasons = tuple(
+        Season(name, tuple(v["start"]), tuple(v["end"])) for name, v in c["seasons"].items()
+    )
+    peaks = {n: tuple((a, b) for a, b in w) for n, w in c["peaks"].items()}
+    for n, w in peaks.items():
+        err = validate_peaks(list(w))
+        if err:
+            raise ValueError(f"{n}: {err}")
+    return Tariff(name="Custom", seasons=seasons, peaks=peaks,
+                  offpeak_weekends=bool(c.get("offpeak_weekends", True)))
 
 
 # ---- Presets -------------------------------------------------------------

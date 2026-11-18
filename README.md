@@ -53,13 +53,21 @@ tariff preset; AC First windows are derived automatically as the complement.
 1. HACS, Custom repositories, add this repo as type *Integration*.
 2. Install, restart Home Assistant.
 3. Settings, Devices & services, Add integration, "EG4 Local TOU Manager".
-4. Enter the gateway IP, port (502), unit (1), tariff preset and your country/state
-   (for holidays).
+4. Enter the gateway IP, port (502), unit (1) and your country/state (for holidays).
+5. Pick your tariff: the BGE preset, **custom summer + winter**, or **one schedule
+   all year**. For custom schedules you enter the summer dates and 1-2 weekday
+   on-peak windows per season. The 12000XP's three AC First windows can fence off
+   at most **two peaks per day**. Change it later from the integration's
+   *Configure* button.
+6. Choose **read-only** (default, nothing is ever written) or **read-write**
+   (asks you to confirm).
 
 ## Known limits in v0.1
 
-* Only the `BGE Schedule RL` tariff preset exists. Adding a preset is a few lines
-  in `planner.py`; a custom-tariff editor is on the roadmap.
+* Custom tariffs: one or two seasons, 1-2 weekday on-peak windows each, weekends
+  and holidays optionally all off-peak. Peaks cannot cross midnight (split them
+  into two windows), and per-weekday or shoulder-rate tariffs are not modelled.
+  The one-hour spring/fall peak shift exists only in the BGE preset.
 * The BGE spring/fall one-hour peak shift treats the end Sundays as exclusive.
   That is an assumption; confirm against your tariff sheet.
 * Winter peak-2 "top-up" (learns evening usage and adds a daytime charge) is

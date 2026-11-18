@@ -6,6 +6,7 @@ CONF_HOST = "host"
 CONF_PORT = "port"
 CONF_UNIT = "unit"
 CONF_TARIFF = "tariff"
+CONF_CUSTOM = "custom_tariff"
 CONF_COUNTRY = "country"
 CONF_SUBDIV = "subdiv"
 
