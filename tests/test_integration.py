@@ -282,3 +282,19 @@ async def test_predictable_entity_ids_and_rules_attribute(hass: HomeAssistant, g
         assert hass.states.get(eid), eid
     rules = hass.states.get("sensor.eg4_tou_active_profile").attributes["rules"]
     assert {r["rule"] for r in rules} >= {"Hold windows (AC First)", "AC charge power"}
+
+
+async def test_timeline_card_is_served_and_registered(hass: HomeAssistant, hass_client, gateway):
+    from homeassistant.components.frontend import add_extra_js_url  # noqa: F401  (import check)
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    client = await hass_client()
+    r = await client.get("/eg4_tou/eg4-tou-timeline-card.js")
+    assert r.status == 200
+    body = await r.text()
+    assert 'customElements.define("eg4-tou-timeline-card"' in body
+    tl = hass.states.get("sensor.eg4_tou_active_profile").attributes["timeline"]
+    assert tl["peaks"] and tl["hold"]["plan"] and tl["charge"]["plan"]
+    assert any(u.startswith("/eg4_tou/eg4-tou-timeline-card.js?v=") for u in hass.data["frontend_extra_module_url"].urls)

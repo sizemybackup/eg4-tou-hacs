@@ -1,5 +1,6 @@
 # EG4 Local TOU Manager: ready-made dashboard (core cards only, no custom JavaScript).
 #
+# Needs integration v0.5.0+ for the timeline card (the integration loads it by itself).
 # Install: Settings > Dashboards > Add dashboard > "New dashboard from scratch", open it,
 # three dots > Edit dashboard > three dots > Raw configuration editor, and paste this file.
 #
@@ -59,6 +60,11 @@ views:
 
       - type: grid
         cards:
+          - type: heading
+            heading: Today's schedule
+            icon: mdi:chart-timeline
+          # 24-hour timeline, served by the integration (v0.5.0+); finds its sensor by itself.
+          - type: custom:eg4-tou-timeline-card
           - type: heading
             heading: Today's rules
             icon: mdi:table-clock

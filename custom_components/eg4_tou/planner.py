@@ -161,18 +161,34 @@ def next_day(day: date) -> date:
 
 # ---- Rules table (for dashboards) ---------------------------------------
 
-def _windows(regs: dict[int, int | None], first_reg: int, count: int = 3) -> str | None:
-    """'HH:MM-HH:MM, ...' from consecutive start/end registers; None if unread.
+def _window_list(regs: dict[int, int | None], first_reg: int, count: int = 3) -> list[list[str]] | None:
+    """[["HH:MM","HH:MM"], ...] from consecutive start/end registers; None if unread.
     A 00:00-00:00 pair is an unused slot and is skipped."""
-    parts = []
+    out = []
     for i in range(count):
         a, b = regs.get(first_reg + 2 * i), regs.get(first_reg + 2 * i + 1)
         if a is None or b is None:
             return None
         if a == 0 and b == 0:
             continue
-        parts.append(f"{unpack_time(a)}-{unpack_time(b)}")
-    return ", ".join(parts) or "none"
+        out.append([unpack_time(a), unpack_time(b)])
+    return out
+
+
+def _windows(regs: dict[int, int | None], first_reg: int, count: int = 3) -> str | None:
+    wl = _window_list(regs, first_reg, count)
+    if wl is None:
+        return None
+    return ", ".join(f"{a}-{b}" for a, b in wl) or "none"
+
+
+def timeline(plan: Plan, current: dict[int, int], peaks: tuple[tuple[str, str], ...] | list) -> dict:
+    """Structured windows for the 24-hour timeline card: the plan and what the inverter holds now."""
+    return {
+        "peaks": [list(p) for p in peaks],
+        "hold": {"plan": _window_list(plan.registers, 152), "inverter": _window_list(current, 152)},
+        "charge": {"plan": _window_list(plan.registers, 68), "inverter": _window_list(current, 68)},
+    }
 
 
 def rules_table(plan: Plan, current: dict[int, int], peaks_text: str) -> list[dict]:

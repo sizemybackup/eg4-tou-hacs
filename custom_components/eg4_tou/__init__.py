@@ -1,13 +1,29 @@
 """EG4 Local TOU Manager: local Modbus time-of-use scheduling for the EG4 12000XP."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .const import DEFAULT_OPTIONS, DOMAIN, PLATFORMS
 
+CARD_URL = "/eg4_tou/eg4-tou-timeline-card.js"
+CARD_FILE = Path(__file__).parent / "frontend" / "eg4-tou-timeline-card.js"
+
 if TYPE_CHECKING:  # keep HA imports out of module scope so the pure logic is testable
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
+
+
+async def async_setup(hass: "HomeAssistant", config: dict) -> bool:
+    """Serve the timeline card and load it on every dashboard page (once per HA run)."""
+    from homeassistant.components.frontend import add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+    from homeassistant.loader import async_get_integration
+
+    version = (await async_get_integration(hass, DOMAIN)).version
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(CARD_FILE), cache_headers=False)])
+    add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+    return True
 
 
 async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:

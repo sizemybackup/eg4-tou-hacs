@@ -111,3 +111,15 @@ def test_rules_table_plan_vs_inverter():
     by = {r["rule"]: r for r in rules_table(p, cur, "")}
     assert by["Charge starts below / stops at"]["now"] == "65% to 80%" and by["Charge starts below / stops at"]["in_sync"] is False
     assert by["AC charge power"]["now"] == "unknown" and by["AC charge power"]["in_sync"] is False
+
+
+def test_timeline_structured_windows():
+    from custom_components.eg4_tou.planner import timeline
+    p = build_plan(date(2026, 11, 18), BGE_RL, Settings(), offpeak_day=False)
+    tl = timeline(p, dict(p.registers), BGE_RL.peaks_for(date(2026, 11, 18)))
+    assert tl["peaks"] == [["07:00", "11:00"], ["17:00", "21:00"]]
+    assert tl["hold"]["plan"] == [["00:00", "07:00"], ["11:00", "17:00"], ["21:00", "23:59"]]
+    assert tl["charge"]["plan"] == [["01:00", "05:00"]] and tl["charge"]["inverter"] == tl["charge"]["plan"]
+    cur = dict(p.registers); del cur[152]
+    assert timeline(p, cur, [])["hold"]["inverter"] is None      # unread -> None, not a wrong bar
+    assert timeline(p, cur, [])["peaks"] == []

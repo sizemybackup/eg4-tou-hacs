@@ -32,7 +32,9 @@ tariff preset; AC First windows are derived automatically as the complement.
 
 A ready-made dashboard (core cards only, no custom JavaScript) is in
 [`dashboards/eg4_tou_dashboard.yaml`](dashboards/eg4_tou_dashboard.yaml): status tiles
-(mode, today's profile, settings out of sync), a **Today's rules** table showing for each
+(mode, today's profile, settings out of sync), a **24-hour timeline** of today's on-peak hours,
+hold windows and overnight charge window (with a now marker, and the inverter's own windows
+drawn underneath if they differ from the plan), a **Today's rules** table showing for each
 rule the plan, what the inverter holds now and whether they match, the list of pending
 changes, and all the controls.
 
@@ -105,7 +107,8 @@ find/replace them in the raw editor.
 ## Development
 
 ```
-uv run --no-project --with pytest-homeassistant-custom-component --with holidays python -I -m pytest
+uv run --no-project --with pytest-homeassistant-custom-component --with holidays --with home-assistant-frontend python -I -m pytest
+node --test tests/frontend/card.test.mjs      # the timeline card's rendering
 ```
 
 ## License

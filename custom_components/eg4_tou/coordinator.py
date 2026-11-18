@@ -32,6 +32,7 @@ class TouData:
     mode: str                      # "off" | "read_only" | "live"
     last_write: str = "never"
     peaks: str = ""
+    peak_list: list = field(default_factory=list)
     extra: dict = field(default_factory=dict)
 
 
@@ -93,8 +94,9 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
                 pending = plan.diff(current)
             except ModbusError:
                 pass  # next cycle will re-check; the write result is already recorded
-        peaks = ", ".join(f"{a}-{b}" for a, b in self.tariff.peaks_for(today)) if not offpeak else "none (off-peak day)"
-        return TouData(current, plan, pending, mode, self._last_write, peaks)
+        peak_list = [] if offpeak else [list(p) for p in self.tariff.peaks_for(today)]
+        peaks = ", ".join(f"{a}-{b}" for a, b in peak_list) if not offpeak else "none (off-peak day)"
+        return TouData(current, plan, pending, mode, self._last_write, peaks, peak_list)
 
     async def _apply(self, pending) -> str:
         done = []
