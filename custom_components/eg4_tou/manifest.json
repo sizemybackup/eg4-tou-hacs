@@ -7,6 +7,11 @@
   "integration_type": "service",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/sizemybackup/eg4-tou-hacs/issues",
-  "requirements": ["holidays"],
-  "version": "0.1.0"
+  "requirements": [
+    "holidays"
+  ],
+  "version": "0.1.0",
+  "dependencies": [
+    "network"
+  ]
 }

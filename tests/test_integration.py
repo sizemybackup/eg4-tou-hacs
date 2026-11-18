@@ -23,8 +23,14 @@ def entry_for(gw):
         "host": "127.0.0.1", "port": gw.port, "unit": 1, "tariff": "bge_rl", "country": "US", "subdiv": "MD"})
 
 
-async def test_config_flow_creates_entry(hass: HomeAssistant, gateway):
+async def _manual(hass):
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    assert r["type"] == "menu"
+    return await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "manual"})
+
+
+async def test_config_flow_creates_entry(hass: HomeAssistant, gateway):
+    r = await _manual(hass)
     assert r["type"] == "form"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {
         "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
@@ -37,7 +43,7 @@ async def test_config_flow_creates_entry(hass: HomeAssistant, gateway):
 
 
 async def _to_mode(hass, gateway):
-    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    r = await _manual(hass)
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {
         "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
     return await hass.config_entries.flow.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True})
@@ -65,7 +71,7 @@ async def test_read_only_flow_never_writes(hass: HomeAssistant, gateway):
 
 
 async def test_config_flow_unreachable(hass: HomeAssistant):
-    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    r = await _manual(hass)
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {
         "host": "127.0.0.1", "port": 1, "unit": 1, "country": "US", "subdiv": ""})
     assert r["type"] == "form" and r["errors"] == {"base": "cannot_connect"}
@@ -109,7 +115,7 @@ async def test_live_mode_converges_then_stays_quiet(hass: HomeAssistant, gateway
 
 
 async def _custom_start(hass, gateway, kind):
-    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    r = await _manual(hass)
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {
         "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
     return await hass.config_entries.flow.async_configure(r["flow_id"], {"tariff": kind, "offpeak_weekends": True})
@@ -189,3 +195,37 @@ async def test_options_flow_changes_tariff(hass: HomeAssistant, gateway):
     r = await f.async_configure(r["flow_id"], {"start": "18:00:00", "end": "22:00:00", "add_another": False})
     assert r["type"] == "create_entry"
     assert e.data["tariff"] == "custom" and e.data["custom_tariff"]["peaks"] == {"winter": [["18:00", "22:00"]]}
+
+
+from unittest.mock import patch
+from custom_components.eg4_tou.scanner import Found, scan_hosts
+
+
+async def test_scan_flow_picks_found_gateway(hass: HomeAssistant, gateway):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    with patch("custom_components.eg4_tou.config_flow.async_scan",
+               return_value=[Found("127.0.0.1", True), Found("127.0.0.2", False)]):
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "scan"})
+    assert r["step_id"] == "pick"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"host": "127.0.0.1"})
+    assert r["step_id"] == "manual"
+    assert [k for k in r["data_schema"].schema if k == "host"][0].default() == "127.0.0.1"
+
+
+async def test_scan_nothing_found_falls_back_to_manual(hass: HomeAssistant):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    with patch("custom_components.eg4_tou.config_flow.async_scan", return_value=[]):
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "scan"})
+    assert r["step_id"] == "manual" and r["errors"] == {"base": "nothing_found"}
+
+
+async def test_scan_hosts_identifies_eg4_and_ignores_closed(gateway):
+    found = await scan_hosts(["127.0.0.1"], port=gateway.port)
+    assert [(f.host, f.looks_like_eg4) for f in found] == [("127.0.0.1", True)]
+    assert await scan_hosts(["127.0.0.1"], port=1) == []  # nothing listening
+
+
+async def test_scan_flags_non_eg4_modbus_device(gateway):
+    gateway.regs[160] = 40000  # a different device: values not 0..100
+    found = await scan_hosts(["127.0.0.1"], port=gateway.port)
+    assert found[0].looks_like_eg4 is False

@@ -15,6 +15,7 @@ from homeassistant.helpers import selector
 from .const import (CONF_COUNTRY, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
                     DOMAIN, OPT_DRY_RUN, OPT_ENABLED)
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
+from .scanner import async_scan
 from .planner import MAX_PEAKS_PER_DAY, PRESETS, tariff_from_custom, validate_peaks, winter_dates
 
 TARIFF_CHOICES = {
@@ -145,7 +146,30 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
         return Eg4TouOptionsFlow()
 
     async def async_step_user(self, user_input=None):
-        errors: dict[str, str] = {}
+        return self.async_show_menu(step_id="user", menu_options=["scan", "manual"])
+
+    async def async_step_scan(self, user_input=None):
+        """Look for the gateway on the local network (read-only)."""
+        found = await async_scan(self.hass)
+        self._found = {f.host: f for f in found}
+        if not found:
+            return await self.async_step_manual(errors={"base": "nothing_found"})
+        return await self.async_step_pick()
+
+    async def async_step_pick(self, user_input=None):
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            self._chosen_host = "" if host == "__manual__" else host
+            return await self.async_step_manual()
+        choices = {h: f"{h}  ({'looks like an EG4 inverter' if f.looks_like_eg4 else 'port 502 open, not confirmed as EG4'})"
+                   for h, f in self._found.items()}
+        choices["__manual__"] = "None of these, enter the address manually"
+        first = next(iter(choices))
+        return self.async_show_form(step_id="pick", data_schema=vol.Schema(
+            {vol.Required(CONF_HOST, default=first): vol.In(choices)}))
+
+    async def async_step_manual(self, user_input=None, errors=None):
+        errors = dict(errors or {})
         if user_input is not None:
             await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}:{user_input[CONF_UNIT]}")
             self._abort_if_unique_id_configured()
@@ -158,14 +182,15 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
                 self._data = dict(user_input)
                 return await self._begin_tariff()
 
+        host_default = getattr(self, "_chosen_host", "")
         schema = vol.Schema({
-            vol.Required(CONF_HOST): str,
+            vol.Required(CONF_HOST, default=host_default): str,
             vol.Required(CONF_PORT, default=502): int,
             vol.Required(CONF_UNIT, default=1): int,
             vol.Required(CONF_COUNTRY, default=self.hass.config.country or "US"): str,
             vol.Optional(CONF_SUBDIV, default=""): str,
         })
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        return self.async_show_form(step_id="manual", data_schema=schema, errors=errors)
 
     async def _tariff_done(self, key, custom):
         self._data[CONF_TARIFF] = key

@@ -44,6 +44,8 @@ class FakeGateway:
                 body = pdu
             writer.write(struct.pack(">HHHB", tid, 0, len(body) + 1, unit) + body)
             await writer.drain()
+        except asyncio.IncompleteReadError:
+            pass  # a port probe connected and hung up without a request
         finally:
             writer.close()
 

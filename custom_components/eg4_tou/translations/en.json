@@ -2,14 +2,11 @@
   "config": {
     "step": {
       "user": {
-        "title": "EG4 Local TOU Manager",
-        "description": "Enter the address of your RS485-to-Ethernet Modbus gateway. Next you will set up your tariff's peak hours, then choose read-only or read-write.",
-        "data": {
-          "host": "Gateway IP address",
-          "port": "Modbus TCP port",
-          "unit": "Modbus unit id",
-          "country": "Country code for holidays (e.g. US)",
-          "subdiv": "State/region for holidays (optional, e.g. MD)"
+        "title": "Find your inverter's gateway",
+        "description": "The integration talks to your inverter through an RS485-to-Ethernet gateway (Modbus TCP, port 502). A scan looks at your local network for it. The scan only reads; it never writes anything.",
+        "menu_options": {
+          "scan": "Scan my network for the gateway",
+          "manual": "Enter the address manually"
         }
       },
       "mode": {
@@ -59,6 +56,24 @@
           "end": "Peak ends",
           "add_another": "Add a second peak window"
         }
+      },
+      "pick": {
+        "title": "Gateway found",
+        "description": "These devices answered on Modbus port 502. Pick your gateway.",
+        "data": {
+          "host": "Gateway"
+        }
+      },
+      "manual": {
+        "title": "Gateway connection",
+        "description": "Address of your RS485-to-Ethernet Modbus gateway. Next you will set up your tariff's peak hours, then choose read-only or read-write.",
+        "data": {
+          "host": "Gateway IP address",
+          "port": "Modbus TCP port",
+          "unit": "Modbus unit id",
+          "country": "Country code for holidays (e.g. US)",
+          "subdiv": "State/region for holidays (optional, e.g. MD)"
+        }
       }
     },
     "error": {
@@ -68,7 +83,8 @@
       "season_full_year": "Summer cannot cover the whole year. Use 'one schedule all year' instead.",
       "peak_order": "The peak must end after it starts, on the same day. Midnight-crossing peaks: split them into two windows.",
       "peak_overlap": "The two peak windows overlap.",
-      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day."
+      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day.",
+      "nothing_found": "No Modbus gateway answered on port 502. Enter its address manually (check that it is powered, on this network, and set to Modbus TCP)."
     },
     "abort": {
       "already_configured": "This gateway is already configured."
