@@ -133,7 +133,7 @@ problem privately, are in [SECURITY.md](SECURITY.md).
 The setup walkthrough and guides on sizemybackup.com show this integration's screens. So that they do not
 drift, `tools/check_ui_docs.py` knows which source files change what users see
 (`docs/ui-docs-map.json`) and records a hash of each group when the articles were last confirmed to match
-(`docs/ui-docs-state.json`).
+(`docs/ui-docs-verified.json`).
 
 - `python3 tools/check_ui_docs.py` lists every group and whether its articles and screenshots may be stale.
 - Enable the commit check once per clone: `git config core.hooksPath .githooks`. It warns when a commit

@@ -2,7 +2,7 @@
 """Do the blog articles and screenshots still match the UI? (stdlib only)
 
 The map (docs/ui-docs-map.json) says which source files change what users see and which
-articles/screenshots show it. The state (docs/ui-docs-state.json) records a hash of each group's
+articles/screenshots show it. The state (docs/ui-docs-verified.json) records a hash of each group's
 files at the moment someone confirmed the articles match. Any difference means "stale".
 
   check_ui_docs.py                 report every group (exit 0; --strict exits 1 if any is stale)
@@ -29,7 +29,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 MAP = REPO / "docs" / "ui-docs-map.json"
-STATE = REPO / "docs" / "ui-docs-state.json"
+STATE = REPO / "docs" / "ui-docs-verified.json"
 CACHE = Path(os.environ.get("EG4_UI_DOCS_CACHE", Path.home() / ".cache" / "eg4-ui-docs-notified.json"))
 SELF = "python3 " + str(Path(__file__).resolve())
 

@@ -1,0 +1,20 @@
+{
+  "_about": "Hashes of each UI group when the blog articles and screenshots were last confirmed to match.",
+  "groups": {
+    "brand": {
+      "hash": "ec1f942d0de26af0d2eb5957766179dbd890166a1dfe792126d125047936b941"
+    },
+    "dashboard-and-cards": {
+      "hash": "808a143a140fd82ebc3a0d45ade583a1d448a0528ea367fde193bf066028fcaa"
+    },
+    "device-and-entities": {
+      "hash": "9d6d827fed8085605e3d73517250b9a1152f7b337a7a3f9496da86946cf8b386"
+    },
+    "schedule-logic": {
+      "hash": "52f02c0c7e4397934f379b960b2c4381c7c02778bcc6f766915512204a8ea74a"
+    },
+    "setup-wizard": {
+      "hash": "08792966497fe2f1a7df439203eb7469461c65be24b3302ad20141843aa366e6"
+    }
+  }
+}
