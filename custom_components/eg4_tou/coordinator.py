@@ -64,10 +64,17 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
             lambda: holidays.country_holidays(d[CONF_COUNTRY], subdiv=d.get(CONF_SUBDIV) or None))
 
     def _day_info(self, day):
-        """(is this an all-off-peak day, label) using weekends and the holiday calendar."""
-        holiday = self._holidays.get(day) if self._holidays is not None else None
+        """(is this an all-off-peak day, label). Weekends, plus holidays from the tariff's own
+        rule when it has one (BGE does), else from the country/state calendar if enabled."""
+        t = self.tariff
+        if t.holiday_fn is not None:
+            holiday = t.holiday_fn(day)
+        elif t.calendar_holidays and self._holidays is not None:
+            holiday = self._holidays.get(day)
+        else:
+            holiday = None
         weekend = day.weekday() >= 5
-        offpeak = self.tariff.offpeak_weekends and (weekend or holiday is not None)
+        offpeak = (t.offpeak_weekends and weekend) or holiday is not None
         label = f"Holiday: {holiday}" if holiday else ("Weekend" if weekend else "Workday")
         return offpeak, label
 

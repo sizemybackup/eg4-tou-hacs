@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Callable
 
+from dateutil.easter import easter
+
 from .modbus import POWER_REG, pack_time, unpack_time
 
 END_OF_DAY = "23:59"
@@ -43,7 +45,11 @@ class Tariff:
     shift_season: str | None = None
     shift_hours: int = 0
     shift_fn: Callable[[date], bool] | None = None
-    offpeak_weekends: bool = True  # weekends and holidays are all off-peak
+    offpeak_weekends: bool = True    # Saturdays and Sundays are all off-peak
+    # Holidays: a utility-specific rule wins; otherwise the country/state calendar is used
+    # when calendar_holidays is true (the calendar can include days a utility bills as normal).
+    holiday_fn: Callable[[date], str | None] | None = None
+    calendar_holidays: bool = True
 
     def season_for(self, day: date) -> str:
         for season in self.seasons:
@@ -280,7 +286,8 @@ def tariff_from_custom(c: dict) -> Tariff:
         if err:
             raise ValueError(f"{n}: {err}")
     return Tariff(name="Custom", seasons=seasons, peaks=peaks,
-                  offpeak_weekends=bool(c.get("offpeak_weekends", True)))
+                  offpeak_weekends=bool(c.get("offpeak_weekends", True)),
+                  calendar_holidays=bool(c.get("offpeak_holidays", True)))
 
 
 # ---- Presets -------------------------------------------------------------
@@ -305,6 +312,45 @@ def _bge_shift(day: date) -> bool:
             or _last_sunday(y, 10) <= day < _nth_sunday(y, 11, 1))
 
 
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    first = date(year, month, 1)
+    return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
+
+
+def _last_weekday(year: int, month: int, weekday: int) -> date:
+    last = date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
+    return last - timedelta(days=(last.weekday() - weekday) % 7)
+
+
+def _bge_listed_holidays(year: int) -> dict[date, str]:
+    """The holidays BGE Schedule RL lists as off-peak (tariff sheet, rating periods page)."""
+    return {
+        date(year, 1, 1): "New Year's Day",
+        _nth_weekday(year, 2, 0, 3): "Presidents' Day",
+        easter(year) - timedelta(days=2): "Good Friday",
+        _last_weekday(year, 5, 0): "Memorial Day",
+        date(year, 7, 4): "Independence Day",
+        _nth_weekday(year, 9, 0, 1): "Labor Day",
+        _nth_weekday(year, 11, 3, 4): "Thanksgiving",
+        date(year, 12, 25): "Christmas",
+    }
+
+
+def _bge_holiday(day: date) -> str | None:
+    """Off-peak holiday name, or None. Per the tariff: the listed holidays, plus the Monday
+    following any of them that falls on a Sunday. Other public holidays (MLK Day, Columbus Day,
+    Veterans Day, Election Day, the day after Thanksgiving...) are NOT off-peak on Schedule RL."""
+    listed = _bge_listed_holidays(day.year)
+    if day in listed:
+        return listed[day]
+    yesterday = day - timedelta(days=1)
+    if day.weekday() == 0 and yesterday.weekday() == 6:
+        name = _bge_listed_holidays(yesterday.year).get(yesterday)
+        if name:
+            return f"{name} (observed)"
+    return None
+
+
 BGE_RL = Tariff(
     name="BGE Schedule RL (Maryland)",
     seasons=(
@@ -318,6 +364,7 @@ BGE_RL = Tariff(
     shift_season="winter",
     shift_hours=1,
     shift_fn=lambda d: _bge_shift(d),
+    holiday_fn=_bge_holiday,
 )
 
 PRESETS: dict[str, Tariff] = {"bge_rl": BGE_RL}

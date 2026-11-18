@@ -61,12 +61,14 @@ class _TariffSteps:
                 return await self._tariff_done(choice, None)
             self._kind = choice
             self._custom["offpeak_weekends"] = user_input["offpeak_weekends"]
+            self._custom["offpeak_holidays"] = user_input.get("offpeak_holidays", True)
             if choice == "seasonal":
                 return await self.async_step_summer_dates()
             return await self.async_step_single_kind()
         schema = vol.Schema({
             vol.Required(CONF_TARIFF, default="bge_rl"): vol.In(TARIFF_CHOICES),
             vol.Required("offpeak_weekends", default=True): bool,
+            vol.Required("offpeak_holidays", default=True): bool,
         })
         return self.async_show_form(step_id="tariff", data_schema=schema)
 

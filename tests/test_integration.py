@@ -315,3 +315,29 @@ async def test_abandoned_attempt_does_not_block_a_new_one(hass: HomeAssistant, g
     r2 = await hass.config_entries.flow.async_configure(second["flow_id"], {
         "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": ""})
     assert r2["type"] == "form" and r2["step_id"] == "tariff"
+
+
+async def test_bge_preset_uses_bge_holidays_and_custom_can_opt_out(hass: HomeAssistant, gateway):
+    from datetime import date
+    e = entry_for(gateway)                                   # BGE preset, country US / subdiv MD
+    e.add_to_hass(hass)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    c = hass.data[DOMAIN][e.entry_id]
+    assert c._day_info(date(2026, 11, 11)) == (False, "Workday")           # Veterans Day: BGE bills peak
+    assert c._day_info(date(2026, 11, 27)) == (False, "Workday")           # day after Thanksgiving
+    assert c._day_info(date(2026, 11, 26)) == (True, "Holiday: Thanksgiving")
+    assert c._day_info(date(2026, 11, 28)) == (True, "Weekend")
+    assert c._day_info(date(2027, 3, 26))[1] == "Holiday: Good Friday"
+
+
+async def test_custom_flow_stores_the_holiday_choice(hass: HomeAssistant, gateway):
+    f = hass.config_entries.flow
+    r = await _manual(hass)
+    r = await f.async_configure(r["flow_id"], {"host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": "MD"})
+    r = await f.async_configure(r["flow_id"], {"tariff": "single", "offpeak_weekends": True, "offpeak_holidays": False})
+    r = await f.async_configure(r["flow_id"], {"kind": "winter"})
+    r = await f.async_configure(r["flow_id"], {"start": "16:00:00", "end": "20:00:00", "add_another": False})
+    r = await f.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["data"]["custom_tariff"]["offpeak_holidays"] is False
+    assert r["data"]["custom_tariff"]["offpeak_weekends"] is True

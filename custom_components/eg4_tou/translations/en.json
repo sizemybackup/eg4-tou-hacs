@@ -29,10 +29,11 @@
       },
       "tariff": {
         "title": "Time-of-use tariff",
-        "description": "Pick a ready-made tariff, or define your own peak hours.\n\nThe 12000XP can hold the battery (so the grid carries the house) around **up to 2 on-peak windows per day** per schedule. Custom schedules let you enter 1 or 2 windows for each season. Charging happens overnight and the battery is spent only inside the peak windows.",
+        "description": "Pick a ready-made tariff, or define your own peak hours.\n\nThe 12000XP can hold the battery (so the grid carries the house) around **up to 2 on-peak windows per day** per schedule. Custom schedules let you enter 1 or 2 windows for each season. Charging happens overnight and the battery is spent only inside the peak windows.\n\nHolidays: the BGE preset uses the holiday list printed in BGE's tariff. For custom schedules, public holidays come from the country and state you entered, which can include days your utility bills as normal weekdays; untick the holiday box if yours does.",
         "data": {
           "tariff": "Tariff",
-          "offpeak_weekends": "Treat weekends and holidays as all off-peak"
+          "offpeak_weekends": "Treat Saturdays and Sundays as all off-peak",
+          "offpeak_holidays": "Treat public holidays as off-peak (custom schedules only)"
         }
       },
       "summer_dates": {
@@ -82,10 +83,11 @@
       },
       "tariff": {
         "title": "Time-of-use tariff",
-        "description": "Pick a ready-made tariff, or define your own peak hours.\n\nThe 12000XP can hold the battery (so the grid carries the house) around **up to 2 on-peak windows per day** per schedule. Custom schedules let you enter 1 or 2 windows for each season. Charging happens overnight and the battery is spent only inside the peak windows.",
+        "description": "Pick a ready-made tariff, or define your own peak hours.\n\nThe 12000XP can hold the battery (so the grid carries the house) around **up to 2 on-peak windows per day** per schedule. Custom schedules let you enter 1 or 2 windows for each season. Charging happens overnight and the battery is spent only inside the peak windows.\n\nHolidays: the BGE preset uses the holiday list printed in BGE's tariff. For custom schedules, public holidays come from the country and state you entered, which can include days your utility bills as normal weekdays; untick the holiday box if yours does.",
         "data": {
           "tariff": "Tariff",
-          "offpeak_weekends": "Treat weekends and holidays as all off-peak"
+          "offpeak_weekends": "Treat Saturdays and Sundays as all off-peak",
+          "offpeak_holidays": "Treat public holidays as off-peak (custom schedules only)"
         }
       },
       "summer_dates": {

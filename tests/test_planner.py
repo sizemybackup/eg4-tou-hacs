@@ -145,3 +145,28 @@ def test_week_schedule_weekends_holidays_and_season_change():
     assert [d["season"] for d in s][:3] == ["winter", "winter", "summer"]
     assert s[2]["peaks"] == [["10:00", "20:00"]]                              # Mon Jun 1: summer weekday peak
     assert w[0]["charge"] == [["01:00", "05:00"]]
+
+
+def test_bge_holidays_follow_the_tariff_sheet_not_the_public_calendar():
+    from custom_components.eg4_tou.planner import _bge_holiday
+    # listed (2026): Jan 1, Presidents' Day Feb 16, Good Friday Apr 3, Memorial May 25, Jul 4 (Sat),
+    # Labor Sep 7, Thanksgiving Nov 26, Christmas Dec 25
+    for d, name in ((date(2026, 1, 1), "New Year's Day"), (date(2026, 2, 16), "Presidents' Day"),
+                    (date(2026, 4, 3), "Good Friday"), (date(2026, 5, 25), "Memorial Day"),
+                    (date(2026, 9, 7), "Labor Day"), (date(2026, 11, 26), "Thanksgiving"),
+                    (date(2026, 12, 25), "Christmas")):
+        assert _bge_holiday(d) == name, d
+    # public holidays BGE does NOT list: peak applies as on any weekday
+    for d in (date(2026, 11, 11), date(2026, 11, 27), date(2027, 1, 18), date(2026, 10, 12), date(2026, 6, 19)):
+        assert _bge_holiday(d) is None, d            # Veterans, day after Thanksgiving, MLK, Columbus, Juneteenth
+    # a listed holiday on a Sunday moves to Monday; on a Saturday it does not move
+    assert _bge_holiday(date(2023, 1, 2)) == "New Year's Day (observed)"      # Jan 1 2023 was a Sunday
+    assert _bge_holiday(date(2027, 7, 5)) == "Independence Day (observed)"    # Jul 4 2027 is a Sunday
+    assert _bge_holiday(date(2027, 12, 24)) is None                           # Dec 25 2027 is a Saturday
+
+
+def test_custom_tariff_can_ignore_public_holidays():
+    from custom_components.eg4_tou.planner import tariff_from_custom
+    base = {"seasons": {"winter": {"start": [1, 1], "end": [12, 31]}}, "peaks": {"winter": [["16:00", "20:00"]]}}
+    assert tariff_from_custom(base).calendar_holidays is True                       # old entries keep behaviour
+    assert tariff_from_custom({**base, "offpeak_holidays": False}).calendar_holidays is False

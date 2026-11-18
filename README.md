@@ -92,6 +92,10 @@ Then: Settings, Devices & services, **Add integration**, search for **EG4 Local 
    on-peak windows per season. The 12000XP's three AC First windows can fence off
    at most **two peaks per day**. Change it later from the integration's
    *Configure* button.
+   Holidays: the BGE preset uses the holiday list printed in BGE's tariff (which is shorter
+   than the public calendar: MLK Day, Veterans Day and the day after Thanksgiving are normal
+   peak days). For custom schedules public holidays come from the country and state you
+   enter, and a checkbox lets you ignore them if your utility bills those days as normal.
 3. Choose **read-only** (default, nothing is ever written) or **read-write**
    (asks you to confirm).
 
