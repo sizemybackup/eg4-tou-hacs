@@ -133,7 +133,7 @@ async def test_custom_seasonal_flow_builds_tariff(hass: HomeAssistant, gateway):
     f = hass.config_entries.flow
     r = await _custom_start(hass, gateway, "seasonal")
     assert r["step_id"] == "summer_dates"
-    r = await f.async_configure(r["flow_id"], {"start_month": 5, "start_day": 15, "end_month": 9, "end_day": 15})
+    r = await f.async_configure(r["flow_id"], {"start_month": "5", "start_day": 15, "end_month": "9", "end_day": 15})
     assert r["step_id"] == "peak" and r["description_placeholders"]["season"] == "summer"
     r = await f.async_configure(r["flow_id"], {"start": "14:00:00", "end": "19:00:00", "add_another": False})
     assert r["step_id"] == "peak" and r["description_placeholders"]["season"] == "winter"
@@ -172,7 +172,7 @@ async def test_peak_validation_errors(hass: HomeAssistant, gateway):
 async def test_summer_cannot_be_whole_year(hass: HomeAssistant, gateway):
     r = await _custom_start(hass, gateway, "seasonal")
     r = await hass.config_entries.flow.async_configure(
-        r["flow_id"], {"start_month": 1, "start_day": 1, "end_month": 12, "end_day": 31})
+        r["flow_id"], {"start_month": "1", "start_day": 1, "end_month": "12", "end_day": 31})
     assert r["errors"] == {"base": "season_full_year"}
 
 
@@ -278,7 +278,7 @@ async def test_predictable_entity_ids_and_rules_attribute(hass: HomeAssistant, g
     for eid in ("sensor.eg4_tou_active_profile", "sensor.eg4_tou_registers_out_of_sync",
                 "sensor.eg4_tou_controller_status", "switch.eg4_tou_controller_enabled",
                 "switch.eg4_tou_read_only_mode", "number.eg4_tou_ac_charge_power",
-                "number.eg4_tou_charge_limit_winter_weekday", "time.eg4_tou_overnight_charge_start"):
+                "number.eg4_tou_charge_limit_winter_weekday", "time.eg4_tou_charge_start"):
         assert hass.states.get(eid), eid
     rules = hass.states.get("sensor.eg4_tou_active_profile").attributes["rules"]
     assert {r["rule"] for r in rules} >= {"Hold windows (AC First)", "AC charge power"}
@@ -303,3 +303,15 @@ async def test_timeline_card_is_served_and_registered(hass: HomeAssistant, hass_
     a = hass.states.get("sensor.eg4_tou_active_profile").attributes
     assert len(a["week"]) == 8 and a["week"][0]["peaks"] is not None
     assert a["facts"]["mode"] == "off" and a["facts"]["start_soc"] == 65
+
+
+async def test_abandoned_attempt_does_not_block_a_new_one(hass: HomeAssistant, gateway):
+    """Close the wizard half-way, open it again: the second attempt must still work."""
+    first = await _manual(hass)
+    r1 = await hass.config_entries.flow.async_configure(first["flow_id"], {
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": ""})
+    assert r1["step_id"] == "tariff"                       # attempt 1 is now abandoned mid-way
+    second = await _manual(hass)
+    r2 = await hass.config_entries.flow.async_configure(second["flow_id"], {
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": ""})
+    assert r2["type"] == "form" and r2["step_id"] == "tariff"

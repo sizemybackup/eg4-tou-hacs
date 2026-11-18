@@ -10,7 +10,7 @@ batteries on a Maryland BGE Schedule RL tariff.
 
 > **Read the safety section before enabling read-write mode.**
 
-**New to this? Start with the [wiring and setup guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html)**: parts list, photos, the gateway settings that work, and how this integration fits in.
+**New to this? Start with the [wiring and gateway guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html)**: parts list, photos, the gateway settings that work, and how this integration fits in.
 
 ## What it does
 
@@ -70,22 +70,32 @@ find/replace them in the raw editor.
 
 ## Install
 
-1. HACS, Custom repositories, add this repo as type *Integration*.
-2. Install, restart Home Assistant.
-3. Settings, Devices & services, Add integration, "EG4 Local TOU Manager".
-4. The first screen scans your local /24 for the gateway automatically (devices with
+**Home Assistant 2026.11 or newer (the Marketplace):**
+1. Settings, **Marketplace**, **Add from link**, paste `https://github.com/sizemybackup/eg4-tou-hacs`
+   and press Add. (The Marketplace asks you to read a first-run warning, and to connect a GitHub
+   account, before it will add a repository from a link.)
+2. Open **EG4 Local TOU Manager**, press **Download**, then restart Home Assistant.
+
+**Older Home Assistant with HACS:** HACS, three dots, Custom repositories, add the same URL as type
+*Integration*, download it and restart.
+
+Then: Settings, Devices & services, **Add integration**, search for **EG4 Local TOU Manager**.
+
+1. The first screen scans your local /24 for the gateway automatically (devices with
    Modbus port 502 open, then two register reads to confirm an EG4; read-only, nothing
    is written). Any gateway found is pre-selected in the **Gateway** field. Accept it, pick
    another, or type your own address in the same field, and adjust port (502), unit (1) and
    your country/state (for holidays) on the same screen. Tick "Scan the network again" to
    rescan.
-5. Pick your tariff: the BGE preset, **custom summer + winter**, or **one schedule
+2. Pick your tariff: the BGE preset, **custom summer + winter**, or **one schedule
    all year**. For custom schedules you enter the summer dates and 1-2 weekday
    on-peak windows per season. The 12000XP's three AC First windows can fence off
    at most **two peaks per day**. Change it later from the integration's
    *Configure* button.
-6. Choose **read-only** (default, nothing is ever written) or **read-write**
+3. Choose **read-only** (default, nothing is ever written) or **read-write**
    (asks you to confirm).
+
+A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manager](https://sizemybackup.com/eg4-local-tou-manager-home-assistant.html).
 
 ## Known limits in v0.1
 

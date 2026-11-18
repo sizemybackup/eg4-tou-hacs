@@ -39,10 +39,10 @@
         "title": "When is summer?",
         "description": "Enter the first and last day of your **summer** rate season. Every other day is treated as winter.",
         "data": {
-          "start_month": "Summer starts: month (1-12)",
-          "start_day": "Summer starts: day",
-          "end_month": "Summer ends: month (1-12)",
-          "end_day": "Summer ends: day"
+          "start_month": "Summer starts: month",
+          "start_day": "Summer starts: day (1-31)",
+          "end_month": "Summer ends: month",
+          "end_day": "Summer ends: day (1-31)"
         }
       },
       "single_kind": {
@@ -54,7 +54,7 @@
       },
       "peak": {
         "title": "On-peak window {n} of up to {max} ({season})",
-        "description": "Enter the weekday on-peak hours for **{season}** (24-hour clock, start must be before end, same day). Tick 'Add a second window' if there is another peak later in the day, for example a morning and an evening peak.",
+        "description": "Enter the weekday on-peak hours for **{season}** (the start must be before the end, on the same day). Tick 'Add a second window' if there is another peak later in the day, for example a morning and an evening peak.",
         "data": {
           "start": "Peak starts",
           "end": "Peak ends",
@@ -92,10 +92,10 @@
         "title": "When is summer?",
         "description": "Enter the first and last day of your **summer** rate season. Every other day is treated as winter.",
         "data": {
-          "start_month": "Summer starts: month (1-12)",
-          "start_day": "Summer starts: day",
-          "end_month": "Summer ends: month (1-12)",
-          "end_day": "Summer ends: day"
+          "start_month": "Summer starts: month",
+          "start_day": "Summer starts: day (1-31)",
+          "end_month": "Summer ends: month",
+          "end_day": "Summer ends: day (1-31)"
         }
       },
       "single_kind": {
@@ -107,7 +107,7 @@
       },
       "peak": {
         "title": "On-peak window {n} of up to {max} ({season})",
-        "description": "Enter the weekday on-peak hours for **{season}** (24-hour clock, start must be before end, same day). Tick 'Add a second window' if there is another peak later in the day, for example a morning and an evening peak.",
+        "description": "Enter the weekday on-peak hours for **{season}** (the start must be before the end, on the same day). Tick 'Add a second window' if there is another peak later in the day, for example a morning and an evening peak.",
         "data": {
           "start": "Peak starts",
           "end": "Peak ends",

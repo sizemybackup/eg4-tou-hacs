@@ -10,8 +10,8 @@ from .const import DOMAIN, OPT_CHARGE_END, OPT_CHARGE_START
 
 async def async_setup_entry(hass, entry, async_add_entities):
     c = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([OptionTime(c, OPT_CHARGE_START, "Overnight charge start"),
-                        OptionTime(c, OPT_CHARGE_END, "Overnight charge end")])
+    async_add_entities([OptionTime(c, OPT_CHARGE_START, "Charge start"),
+                        OptionTime(c, OPT_CHARGE_END, "Charge end")])
 
 
 class OptionTime(TouEntity, TimeEntity):

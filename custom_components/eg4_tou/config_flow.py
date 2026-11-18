@@ -5,6 +5,7 @@ their schedule later from the integration's Configure button.
 """
 from __future__ import annotations
 
+import calendar
 from datetime import date
 
 import voluptuous as vol
@@ -89,11 +90,14 @@ class _TariffSteps:
                     }
                     self._todo = ["summer", "winter"]
                     return await self.async_step_peak()
-        month = vol.All(vol.Coerce(int), vol.Range(min=1, max=12))
-        day = vol.All(vol.Coerce(int), vol.Range(min=1, max=31))
+        month = selector.SelectSelector(selector.SelectSelectorConfig(
+            options=[{"value": str(i), "label": calendar.month_name[i]} for i in range(1, 13)],
+            mode=selector.SelectSelectorMode.DROPDOWN))
+        day = selector.NumberSelector(selector.NumberSelectorConfig(
+            min=1, max=31, step=1, mode=selector.NumberSelectorMode.BOX))
         schema = vol.Schema({
-            vol.Required("start_month", default=6): month, vol.Required("start_day", default=1): day,
-            vol.Required("end_month", default=9): month, vol.Required("end_day", default=30): day,
+            vol.Required("start_month", default="6"): month, vol.Required("start_day", default=1): day,
+            vol.Required("end_month", default="9"): month, vol.Required("end_day", default=30): day,
         })
         return self.async_show_form(step_id="summer_dates", data_schema=schema, errors=errors)
 
@@ -130,7 +134,7 @@ class _TariffSteps:
                 self._custom["peaks"] = {k: [list(w) for w in v] for k, v in self._peaks.items()}
                 tariff_from_custom(self._custom)  # final sanity check
                 return await self._tariff_done("custom", self._custom)
-        default_start, default_end = ("07:00:00", "11:00:00") if n == 1 else ("17:00:00", "21:00:00")
+        default_start, default_end = ("16:00:00", "20:00:00") if n == 1 else ("06:00:00", "09:00:00")
         return self.async_show_form(
             step_id="peak", data_schema=_peak_schema(default_start, default_end, n < MAX_PEAKS_PER_DAY),
             description_placeholders={"season": season, "n": str(n), "max": str(MAX_PEAKS_PER_DAY)},
@@ -155,7 +159,9 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         rescan = bool(user_input and user_input.get("rescan"))
         if user_input is not None and not rescan:
-            await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}:{user_input[CONF_UNIT]}")
+            # raise_on_progress=False: an abandoned earlier attempt must not block a fresh one
+            await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}:{user_input[CONF_UNIT]}",
+                                           raise_on_progress=False)
             self._abort_if_unique_id_configured()
             client = Eg4Modbus(ModbusConfig(user_input[CONF_HOST], user_input[CONF_PORT], user_input[CONF_UNIT]))
             try:
@@ -207,7 +213,13 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             if user_input["mode"] == "read_write":
                 return await self.async_step_confirm()
             return self._finish(read_only=True)
-        schema = vol.Schema({vol.Required("mode", default="read_only"): vol.In(["read_only", "read_write"])})
+        schema = vol.Schema({vol.Required("mode", default="read_only"): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    {"value": "read_only", "label": "Read-only (recommended): show the plan, never write"},
+                    {"value": "read_write", "label": "Read-write: apply the plan to the inverter"},
+                ],
+                mode=selector.SelectSelectorMode.LIST))})
         return self.async_show_form(step_id="mode", data_schema=schema)
 
     async def async_step_confirm(self, user_input=None):

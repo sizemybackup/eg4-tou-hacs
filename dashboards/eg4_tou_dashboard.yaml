@@ -129,10 +129,10 @@ views:
               - entity: number.eg4_tou_charge_limit_weekend_holiday
                 name: Weekend / holiday
               - type: section
-                label: Overnight charge
-              - entity: time.eg4_tou_overnight_charge_start
-                name: Window starts
-              - entity: time.eg4_tou_overnight_charge_end
-                name: Window ends
+                label: Overnight charge window
+              - entity: time.eg4_tou_charge_start
+                name: Starts
+              - entity: time.eg4_tou_charge_end
+                name: Ends
               - entity: number.eg4_tou_ac_charge_power
                 name: AC charge power
