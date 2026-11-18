@@ -127,3 +127,9 @@ def test_the_real_map_is_consistent():
     for name, g in real.items():
         assert mod.tracked_files(g["ui_files"]), f"group {name} matches no files"
         assert g["articles"] or g["screenshots"], name
+
+
+def test_verified_state_file_is_tracked_not_swallowed_by_the_secret_ignore_rules():
+    root = SCRIPT.parent.parent
+    r = subprocess.run(["git", "-C", str(root), "check-ignore", "-q", "docs/ui-docs-verified.json"])
+    assert r.returncode == 1, "docs/ui-docs-verified.json is gitignored: a fresh clone would see every group unverified"
