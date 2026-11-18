@@ -83,3 +83,7 @@ tariff preset; AC First windows are derived automatically as the complement.
 ```
 uv run --no-project --with pytest-homeassistant-custom-component --with holidays python -I -m pytest
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE). This is community software, not affiliated with or endorsed by EG4 Electronics.
