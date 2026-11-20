@@ -21,6 +21,7 @@
         "setup-5-peak-window.webp",
         "setup-6-read-only-or-read-write.webp",
         "setup-7-confirm-read-write.webp",
+        "setup-8-dashboard-step.webp",
         "setup-8-name-and-assign.webp"
       ]
     },
@@ -53,7 +54,6 @@
       ],
       "screenshots": [
         "dashboard-finished.webp",
-        "dashboard-raw-editor.webp",
         "rules-card-with-battery.webp"
       ]
     },
