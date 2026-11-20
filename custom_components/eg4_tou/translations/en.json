@@ -106,6 +106,16 @@
           "country": "Two-letter country code. Used for public holidays in custom schedules (the BGE preset has its own holiday list).",
           "subdiv": "State or region code within that country, for regional holidays. Leave empty for national holidays only."
         }
+      },
+      "dashboard": {
+        "title": "Dashboard",
+        "description": "The integration comes with a ready-made dashboard: the rules and countdown table, a 24-hour timeline, a plan-versus-inverter table and all the controls. It is added to the sidebar as **EG4 TOU** and is removed again if you remove the integration.\n\nIf you already have a dashboard at `/eg4-tou` it is left alone.",
+        "data": {
+          "create_dashboard": "Create the EG4 TOU dashboard"
+        },
+        "data_description": {
+          "create_dashboard": "Untick it if you would rather build your own; the dashboard file stays in the integration's folder."
+        }
       }
     },
     "error": {

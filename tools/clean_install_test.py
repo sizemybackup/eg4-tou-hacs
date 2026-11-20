@@ -6,8 +6,9 @@ custom_components/eg4_tou in a fresh config folder), then walks the new-user jou
 Docker container and prints a PASS/FAIL table. Nothing from your own working tree is used.
 
   uv run --with playwright python tools/clean_install_test.py                      # latest release, HA stable
-  uv run --with playwright python tools/clean_install_test.py --ref v0.9.0 \
+  uv run --with playwright python tools/clean_install_test.py --ref v0.10.0 \
         --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4                  # oldest supported HA
+  uv run --with playwright python tools/clean_install_test.py --local                   # the working tree, before tagging
   python3 tools/clean_install_test.py --no-browser                                 # skip the dashboard checks
 
 Needs Docker. The container uses host networking so the setup wizard's network scan can find a real
@@ -15,7 +16,7 @@ gateway on your LAN (read-only reads only; read-only mode is chosen in the wizar
 Give --host to skip the scan. Without a reachable gateway the journey steps fail with a clear message.
 
 What is checked: archive layout and manifest, container start with no errors from the integration,
-setup wizard (scan, tariff, read-only), entities and their data, card files served and registered,
+setup wizard (scan, tariff, read-only, dashboard), the dashboard it creates (and its removal), entities and their data, card files served and registered,
 Configure (options flow) and the reload it triggers, dashboard cards render with no JavaScript errors,
 the write switches are configuration entities, survives a Home Assistant restart, and uninstalls
 cleanly (entry removed, folder deleted, restart without errors).
@@ -131,6 +132,16 @@ def our_log_problems(logs: str) -> list[str]:
     return out
 
 
+def copy_local(work: Path) -> Path | None:
+    """--local: the working tree's integration folder, for a pre-release check. Same layout as a download."""
+    src = Path(__file__).resolve().parent.parent / "custom_components" / DOMAIN
+    dest = work / "config" / "custom_components" / DOMAIN
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))
+    n = sum(1 for p in dest.rglob("*") if p.is_file())
+    record("copy the working tree's integration folder (--local)", n > 0, f"{n} files")
+    return dest
+
+
 def download_release(ref: str, work: Path) -> Path | None:
     url = f"https://github.com/{REPO}/archive/refs/tags/{ref}.zip"
     try:
@@ -150,20 +161,18 @@ def download_release(ref: str, work: Path) -> Path | None:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(z.read(name))
             n += 1
-    dash = f"{root}/dashboards/eg4_tou_dashboard.yaml"
-    if dash in z.namelist():
-        (work / "dashboard.yaml").write_bytes(z.read(dash))
     record("download the release archive from GitHub", n > 0, f"{ref}: {n} files, {len(blob) // 1024} KB")
     return dest / DOMAIN if n else None
 
 
 def check_layout(pkg: Path, ref: str) -> None:
+    ref = ref if ref != "local" else "v" + json.loads((pkg / "manifest.json").read_text())["version"]
     man = json.loads((pkg / "manifest.json").read_text())
     need = {"domain", "name", "version", "documentation", "issue_tracker", "codeowners", "requirements", "config_flow"}
     record("manifest has the keys HACS/hassfest require", need <= set(man), "missing: " + ", ".join(sorted(need - set(man))) if need - set(man) else f"v{man['version']}")
     record("manifest version matches the release tag", man["version"] == ref.lstrip("v"), f"manifest {man['version']} vs tag {ref}")
     files = ["__init__.py", "config_flow.py", "translations/en.json", "frontend/eg4-tou-timeline-card.js",
-             "frontend/eg4-tou-rules-card.js", "brand/icon.png", "brand/dark_icon.png", "brand/logo.png"]
+             "frontend/eg4-tou-rules-card.js", "dashboard.yaml", "brand/icon.png", "brand/dark_icon.png", "brand/logo.png"]
     miss = [f for f in files if not (pkg / f).exists()]
     record("all runtime files are present in the archive", not miss, ", ".join(miss) or f"{sum(1 for _ in pkg.rglob('*') if _.is_file())} files")
     record("integration does not ship tests or secrets", not any(p.suffix in (".env", ".pem", ".key") or p.name.startswith("test_") for p in pkg.rglob("*")))
@@ -192,7 +201,9 @@ def run_journey(ha: HA, container: str, args, work: Path) -> dict:
     s, nxt = ha.call("POST", f"/api/config/config_entries/flow/{nxt['flow_id']}",
                      {"tariff": "bge_rl", "offpeak_weekends": True, "offpeak_holidays": True})
     record("tariff step accepts the BGE preset", s == 200 and nxt.get("step_id") == "mode", str(nxt)[:120])
-    s, done = ha.call("POST", f"/api/config/config_entries/flow/{nxt['flow_id']}", {"mode": "read_only"})
+    s, nxt = ha.call("POST", f"/api/config/config_entries/flow/{nxt['flow_id']}", {"mode": "read_only"})
+    record("the wizard offers the dashboard as its last step", s == 200 and nxt.get("step_id") == "dashboard", str(nxt)[:120])
+    s, done = ha.call("POST", f"/api/config/config_entries/flow/{nxt['flow_id']}", {"create_dashboard": True})
     if not record("setup finishes in read-only mode and creates the entry", s == 200 and done.get("type") == "create_entry",
                   str(done)[:200]):
         return ctx
@@ -244,16 +255,6 @@ def browser_checks(ha: HA, work: Path, base: str) -> None:
     except ImportError:
         record("dashboard cards render in a real browser", None, "playwright not installed (use: uv run --with playwright ...)")
         return
-    try:
-        import yaml  # noqa: F401
-        have_yaml = True
-    except ImportError:
-        have_yaml = False
-    dash = work / "dashboard.yaml"
-    if not dash.exists():
-        record("dashboard cards render in a real browser", None, "dashboard yaml not in the archive")
-        return
-    cfg = _yaml_to_json(dash, have_yaml)
     chrome = Path.home() / ".cache" / "ms-playwright" / "chromium-1140" / "chrome-linux" / "chrome"
     tokens = {"access_token": ha.token(), "token_type": "Bearer", "expires_in": 1800, "hassUrl": base, "clientId": base + "/",
               "expires": int((time.time() + 1800) * 1000), "refresh_token": ha.refresh}
@@ -266,12 +267,13 @@ def browser_checks(ha: HA, work: Path, base: str) -> None:
         pg.on("pageerror", lambda e: errors.append("pageerror: " + str(e)[:200]))
         pg.on("console", lambda m: errors.append("console: " + m.text[:200]) if m.type == "error" else None)
         pg.goto(base + "/config/dashboard"); pg.wait_for_timeout(6000)
-        made = pg.evaluate("""async (cfg) => {
-            const h = document.querySelector('home-assistant').hass;
-            await h.callWS({type: 'lovelace/dashboards/create', url_path: 'eg4-tou', title: 'EG4 TOU', require_admin: false, show_in_sidebar: true});
-            await h.callWS({type: 'lovelace/config/save', url_path: 'eg4-tou', config: cfg});
-            return true; }""", cfg)
-        record("the repo's dashboard YAML saves as a dashboard", bool(made))
+        dashes = pg.evaluate("""async () => { const h = document.querySelector('home-assistant').hass;
+            const l = await h.callWS({type: 'lovelace/dashboards/list'}); return l.map(d => [d.url_path, d.title, d.show_in_sidebar]); }""")
+        record("the wizard created the EG4 TOU dashboard in the sidebar", ["eg4-tou", "EG4 TOU", True] in dashes, str(dashes))
+        cfg = pg.evaluate("""async () => { const h = document.querySelector('home-assistant').hass;
+            return await h.callWS({type: 'lovelace/config', url_path: 'eg4-tou'}); }""")
+        record("the dashboard holds the shipped views and both cards", cfg.get("views", [{}])[0].get("path") == "schedule"
+               and "eg4-tou-rules-card" in json.dumps(cfg) and "eg4-tou-timeline-card" in json.dumps(cfg), str(list(cfg))[:80])
         pg.goto(base + "/eg4-tou/schedule"); pg.wait_for_timeout(9000)
         defined = pg.evaluate("() => [!!customElements.get('eg4-tou-rules-card'), !!customElements.get('eg4-tou-timeline-card')]")
         record("both custom cards are defined in the browser", all(defined), str(defined))
@@ -291,14 +293,25 @@ def browser_checks(ha: HA, work: Path, base: str) -> None:
     record("no JavaScript errors from the cards", not ours, "; ".join(ours)[:200] or f"{len(errors)} unrelated browser message(s)")
 
 
-def _yaml_to_json(path: Path, have_yaml: bool) -> dict:
-    if have_yaml:
-        import yaml
-        return yaml.safe_load(path.read_text())
-    out = subprocess.run(["uv", "run", "--no-project", "--with", "pyyaml", "python", "-c",
-                          "import sys,json,yaml;print(json.dumps(yaml.safe_load(open(sys.argv[1]))))", str(path)],
-                         capture_output=True, text=True, timeout=120)
-    return json.loads(out.stdout)
+def dashboard_paths(ha: HA, base: str) -> list[str] | None:
+    """url_paths of the storage dashboards, read through the frontend's websocket (None: no browser)."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return None
+    chrome = Path.home() / ".cache" / "ms-playwright" / "chromium-1140" / "chrome-linux" / "chrome"
+    tokens = {"access_token": ha.token(), "token_type": "Bearer", "expires_in": 1800, "hassUrl": base, "clientId": base + "/",
+              "expires": int((time.time() + 1800) * 1000), "refresh_token": ha.refresh}
+    with sync_playwright() as p:
+        b = p.chromium.launch(**({"executable_path": str(chrome)} if chrome.exists() else {}), args=["--no-sandbox"])
+        ctx = b.new_context()
+        ctx.add_init_script("localStorage.setItem('hassTokens', %s);" % json.dumps(json.dumps(tokens)))
+        pg = ctx.new_page()
+        pg.goto(base + "/config/dashboard"); pg.wait_for_timeout(6000)
+        out = pg.evaluate("""async () => { const h = document.querySelector('home-assistant').hass;
+            return (await h.callWS({type: 'lovelace/dashboards/list'})).map(d => d.url_path); }""")
+        b.close()
+    return out
 
 
 def options_and_reload(ha: HA, entry_id: str) -> None:
@@ -317,6 +330,7 @@ def options_and_reload(ha: HA, entry_id: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ref", help="release tag to test (default: the latest release)")
+    ap.add_argument("--local", action="store_true", help="test the working tree instead of a published release (pre-release check)")
     ap.add_argument("--ha-image", default="ghcr.io/home-assistant/home-assistant:stable")
     ap.add_argument("--host", help="gateway address; skips the network scan")
     ap.add_argument("--port", type=int, default=8123)
@@ -327,7 +341,7 @@ def main() -> int:
     if shutil.which("docker") is None:
         print("docker is required", file=sys.stderr)
         return 2
-    ref = args.ref
+    ref = "local" if args.local else args.ref
     if not ref:
         with urllib.request.urlopen(f"https://api.github.com/repos/{REPO}/releases/latest", timeout=30) as r:
             ref = json.load(r)["tag_name"]
@@ -335,7 +349,7 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="eg4-clean-install-"))
     container = "eg4-clean-install-test"
     sh("docker", "rm", "-f", container)
-    pkg = download_release(ref, work)
+    pkg = copy_local(work) if args.local else download_release(ref, work)
     if pkg:
         check_layout(pkg, ref)
         (work / "config" / "configuration.yaml").write_text("default_config:\n")   # what a fresh user has
@@ -352,7 +366,7 @@ def main() -> int:
                 if ctx.get("entry_id"):
                     st = wait_entities(ha)
                     check_entities(st)
-                    check_frontend(ha, ref.lstrip("v"))
+                    check_frontend(ha, json.loads((pkg / "manifest.json").read_text())["version"])
                     probs = our_log_problems(sh("docker", "logs", container).stdout + sh("docker", "logs", container).stderr)
                     record("no warnings or errors from the integration in the log", not probs, " | ".join(probs[:3]))
                     if not args.no_browser:
@@ -369,6 +383,9 @@ def main() -> int:
                     time.sleep(4)
                     left = [k for k in ha.states() if k.split(".", 1)[1].startswith("eg4_tou_")]
                     record("removing the integration removes its entities", s == 200 and not left, f"{len(left)} left")
+                    if not args.no_browser:
+                        paths = dashboard_paths(ha, base)
+                        record("removing the integration removes the dashboard it created", paths is not None and "eg4-tou" not in paths, str(paths))
                     sh("docker", "exec", container, "rm", "-rf", f"/config/custom_components/{DOMAIN}")
                     sh("docker", "restart", container)
                     ha.wait_up()

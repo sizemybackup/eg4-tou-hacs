@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 from homeassistant.helpers import config_validation as cv
 
 from .coordinator import TouCoordinator
-from .const import DEFAULT_OPTIONS, DOMAIN, PLATFORMS
+from .const import CONF_CREATE_DASHBOARD, CONF_DASHBOARD_URL, DEFAULT_OPTIONS, DOMAIN, PLATFORMS
+from .dashboard import CREATED, UNAVAILABLE, URL_PATH, async_create_dashboard, async_remove_dashboard
 
 # Set up from the UI only; any `eg4_tou:` key in configuration.yaml is rejected with a clear message.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -46,6 +47,7 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await _maybe_create_dashboard(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
     return True
 
@@ -56,3 +58,28 @@ async def _options_updated(hass: "HomeAssistant", entry: "ConfigEntry") -> None:
 
 async def async_unload_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def _maybe_create_dashboard(hass: "HomeAssistant", entry: "ConfigEntry") -> None:
+    """Create the dashboard the wizard offered, once. Failing to do so never fails the setup."""
+    if not entry.data.get(CONF_CREATE_DASHBOARD):
+        return
+    result = await async_create_dashboard(hass)
+    data = {**entry.data, CONF_CREATE_DASHBOARD: False}
+    if result == CREATED:
+        data[CONF_DASHBOARD_URL] = URL_PATH
+    elif result == UNAVAILABLE:
+        from homeassistant.components import persistent_notification
+        persistent_notification.async_create(
+            hass, "The EG4 TOU dashboard could not be created automatically. Add it by hand: copy "
+            "`custom_components/eg4_tou/dashboard.yaml` from the integration's GitHub page into a new "
+            "dashboard's raw configuration editor. See the README for the steps.",
+            title="EG4 Local TOU Manager", notification_id="eg4_tou_dashboard")
+    hass.config_entries.async_update_entry(entry, data=data)
+
+
+async def async_remove_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> None:
+    """Remove the dashboard we created when the last entry goes."""
+    others = [e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id]
+    if entry.data.get(CONF_DASHBOARD_URL) and not others:
+        await async_remove_dashboard(hass)

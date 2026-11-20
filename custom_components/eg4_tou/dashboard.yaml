@@ -1,7 +1,8 @@
 # EG4 Local TOU Manager: ready-made dashboard (core cards plus the integration's own two cards).
 #
 # Needs integration v0.6.0+ for the two custom cards (the integration loads them by itself).
-# Install: Settings > Dashboards > Add dashboard > "New dashboard from scratch", open it,
+# The setup wizard creates this dashboard for you (v0.10.0+). To add it by hand instead:
+# Settings > Dashboards > Add dashboard > "New dashboard from scratch", open it,
 # three dots > Edit dashboard > three dots > Raw configuration editor, and paste this file.
 #
 # The tables find the integration's entities by themselves. The tiles and controls use the

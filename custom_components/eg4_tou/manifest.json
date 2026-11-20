@@ -1,6 +1,7 @@
 {
   "domain": "eg4_tou",
   "name": "EG4 Local TOU Manager",
+  "after_dependencies": ["lovelace"],
   "categories": ["energy.solar_batteries"],
   "codeowners": ["@mecindustriesllc"],
   "config_flow": true,
@@ -10,5 +11,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/sizemybackup/eg4-tou-hacs/issues",
   "requirements": ["holidays>=0.40"],
-  "version": "0.9.0"
+  "version": "0.10.0"
 }

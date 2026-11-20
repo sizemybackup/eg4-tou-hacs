@@ -18,7 +18,7 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
-from .const import (CONF_COUNTRY, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
+from .const import (CONF_COUNTRY, CONF_CREATE_DASHBOARD, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
                     DOMAIN, OPT_DRY_RUN, OPT_ENABLED)
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
 from .scanner import Found, async_scan, is_local_address
@@ -131,6 +131,10 @@ def _show(flow: object, step_id: str, schema: vol.Schema, errors: dict[str, str]
                                    description_placeholders=placeholders)
 
 
+def _dashboard_schema() -> vol.Schema:
+    return vol.Schema({vol.Required(CONF_CREATE_DASHBOARD, default=True): bool})
+
+
 class _TariffSteps:
     """Mixin for the config and options flows. Subclasses implement _tariff_done()."""
 
@@ -238,6 +242,7 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     _data: dict[str, Any]
     _found: dict[str, Found]
+    _read_only: bool
 
     @staticmethod
     @callback
@@ -332,7 +337,8 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if user_input["mode"] == "read_write":
                 return await self.async_step_confirm()
-            return self._finish(read_only=True)
+            self._read_only = True
+            return await self.async_step_dashboard()
         schema = vol.Schema({vol.Required("mode", default="read_only"): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=[
@@ -347,15 +353,20 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             if user_input["understood"]:
-                return self._finish(read_only=False)
+                self._read_only = False
+                return await self.async_step_dashboard()
             errors["understood"] = "must_confirm"
         schema = vol.Schema({vol.Required("understood", default=False): bool})
         return _show(self, "confirm", schema, errors)
 
-    def _finish(self, read_only: bool) -> ConfigFlowResult:
+    async def async_step_dashboard(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Last step: offer the ready-made dashboard (created when the entry loads)."""
+        if user_input is None:
+            return _show(self, "dashboard", _dashboard_schema())
+        self._data[CONF_CREATE_DASHBOARD] = bool(user_input[CONF_CREATE_DASHBOARD])
         return self.async_create_entry(
             title=_title(self._data), data=self._data,
-            options={OPT_ENABLED: True, OPT_DRY_RUN: read_only})
+            options={OPT_ENABLED: True, OPT_DRY_RUN: self._read_only})
 
 
 class Eg4TouOptionsFlow(_TariffSteps, config_entries.OptionsFlow):

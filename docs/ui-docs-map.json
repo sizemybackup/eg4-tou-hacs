@@ -44,7 +44,7 @@
     "dashboard-and-cards": {
       "why": "The ready-made dashboard and the two custom cards.",
       "ui_files": [
-        "dashboards/eg4_tou_dashboard.yaml",
+        "custom_components/eg4_tou/dashboard.yaml",
         "custom_components/eg4_tou/frontend/*.js"
       ],
       "articles": [

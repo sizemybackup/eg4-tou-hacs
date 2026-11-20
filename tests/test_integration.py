@@ -46,6 +46,8 @@ async def test_config_flow_creates_entry(hass: HomeAssistant, gateway):
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True})
     assert r["step_id"] == "mode"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["step_id"] == "dashboard"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"create_dashboard": False})
     assert r["type"] == "create_entry"
     assert r["options"] == {"enabled": True, "dry_run": True}
 
@@ -65,6 +67,8 @@ async def test_read_write_requires_confirmation(hass: HomeAssistant, gateway):
     assert r["type"] == "form" and r["errors"] == {"understood": "must_confirm"}
     assert gateway.writes == [], "nothing may be written before the confirmation is ticked"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"understood": True})
+    assert r["step_id"] == "dashboard"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"create_dashboard": False})
     assert r["type"] == "create_entry" and r["options"]["dry_run"] is False
     await hass.async_block_till_done()
     assert gateway.writes, "after confirming read-write, writes begin"
@@ -73,6 +77,8 @@ async def test_read_write_requires_confirmation(hass: HomeAssistant, gateway):
 async def test_read_only_flow_never_writes(hass: HomeAssistant, gateway):
     r = await _to_mode(hass, gateway)
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["step_id"] == "dashboard"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"create_dashboard": False})
     await hass.async_block_till_done()
     assert gateway.writes == []
     assert hass.states.get("sensor.eg4_tou_controller_status").state == "read_only"
@@ -142,6 +148,8 @@ async def test_custom_seasonal_flow_builds_tariff(hass: HomeAssistant, gateway):
     r = await f.async_configure(r["flow_id"], {"start": "17:00:00", "end": "20:00:00"})
     assert r["step_id"] == "mode"
     r = await f.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["step_id"] == "dashboard"
+    r = await f.async_configure(r["flow_id"], {"create_dashboard": False})
     c = r["data"]["custom_tariff"]
     assert r["data"]["tariff"] == "custom"
     assert c["seasons"]["winter"] == {"start": [9, 16], "end": [5, 14]}
@@ -155,6 +163,8 @@ async def test_custom_single_flow(hass: HomeAssistant, gateway):
     r = await f.async_configure(r["flow_id"], {"kind": "summer"})
     r = await f.async_configure(r["flow_id"], {"start": "16:00:00", "end": "21:00:00", "add_another": False})
     r = await f.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["step_id"] == "dashboard"
+    r = await f.async_configure(r["flow_id"], {"create_dashboard": False})
     assert r["data"]["custom_tariff"]["peaks"] == {"summer": [["16:00", "21:00"]]}
 
 
@@ -339,6 +349,8 @@ async def test_custom_flow_stores_the_holiday_choice(hass: HomeAssistant, gatewa
     r = await f.async_configure(r["flow_id"], {"kind": "winter"})
     r = await f.async_configure(r["flow_id"], {"start": "16:00:00", "end": "20:00:00", "add_another": False})
     r = await f.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["step_id"] == "dashboard"
+    r = await f.async_configure(r["flow_id"], {"create_dashboard": False})
     assert r["data"]["custom_tariff"]["offpeak_holidays"] is False
     assert r["data"]["custom_tariff"]["offpeak_weekends"] is True
 
@@ -455,6 +467,8 @@ async def test_setup_rejects_unknown_country_and_region(hass: HomeAssistant, gat
     assert r["step_id"] == "tariff"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True})
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["step_id"] == "dashboard"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"create_dashboard": False})
     assert r["data"]["country"] == "US" and r["data"]["subdiv"] == "MD"
 
 
@@ -626,3 +640,140 @@ async def test_scan_edge_cases(hass: HomeAssistant, gateway):
     # a port that opens but never answers Modbus is reported as "not confirmed as EG4"
     gateway.drop_first = 99
     assert await scanner._identify("127.0.0.1", gateway.port, 1) == scanner.Found("127.0.0.1", False)
+
+
+# ---- the dashboard the wizard can create --------------------------------------------------
+
+async def _finish_wizard(hass, gateway, create: bool):
+    r = await _to_mode(hass, gateway)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["step_id"] == "dashboard"
+    return await hass.config_entries.flow.async_configure(r["flow_id"], {"create_dashboard": create})
+
+
+async def _lovelace(hass):
+    from homeassistant.setup import async_setup_component
+    assert await async_setup_component(hass, "lovelace", {})
+    await hass.async_block_till_done()
+
+
+async def test_wizard_creates_the_dashboard_and_removal_deletes_it(hass: HomeAssistant, gateway):
+    await _lovelace(hass)
+    r = await _finish_wizard(hass, gateway, True)
+    assert r["type"] == "create_entry"
+    await hass.async_block_till_done()
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entry.data["create_dashboard"] is False and entry.data["dashboard_url"] == "eg4-tou"
+    from custom_components.eg4_tou import dashboard as dash
+    coll = dash._collection(hass)
+    item = dash._find_item(coll)
+    assert item["title"] == "EG4 TOU" and item["show_in_sidebar"] is True and item["require_admin"] is False
+    cfg = await dash._live_dashboards(hass)[dash.URL_PATH].async_load(False)
+    assert cfg["title"] == "EG4 TOU" and cfg["views"][0]["path"] == "schedule"
+    # a reload does not create it again
+    await hass.config_entries.async_reload(entry.entry_id)
+    assert len([i for i in coll.async_items() if i["url_path"] == "eg4-tou"]) == 1
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert dash._find_item(coll) is None and dash.URL_PATH not in dash._live_dashboards(hass)
+
+
+async def test_wizard_without_the_box_ticked_creates_nothing(hass: HomeAssistant, gateway):
+    await _lovelace(hass)
+    r = await _finish_wizard(hass, gateway, False)
+    assert r["type"] == "create_entry"
+    await hass.async_block_till_done()
+    from custom_components.eg4_tou import dashboard as dash
+    assert dash._find_item(dash._collection(hass)) is None
+    assert "dashboard_url" not in hass.config_entries.async_entries(DOMAIN)[0].data
+
+
+async def test_an_existing_dashboard_is_left_alone_and_survives_removal(hass: HomeAssistant, gateway):
+    await _lovelace(hass)
+    from custom_components.eg4_tou import dashboard as dash
+    coll = dash._collection(hass)
+    await coll.async_create_item({"url_path": "eg4-tou", "title": "Mine", "icon": "mdi:home",
+                                  "show_in_sidebar": True, "require_admin": False, "allow_single_word": True})
+    await dash._live_dashboards(hass)["eg4-tou"].async_save({"views": [{"title": "Mine"}]})
+    r = await _finish_wizard(hass, gateway, True)
+    assert r["type"] == "create_entry"
+    await hass.async_block_till_done()
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert "dashboard_url" not in entry.data
+    assert (await dash._live_dashboards(hass)["eg4-tou"].async_load(False))["views"] == [{"title": "Mine"}]
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert dash._find_item(coll)["title"] == "Mine", "we only remove a dashboard we created"
+
+
+async def test_without_lovelace_the_setup_still_works_and_explains(hass: HomeAssistant, gateway):
+    with patch("homeassistant.components.persistent_notification.async_create") as note, \
+            patch("custom_components.eg4_tou.dashboard._collection", return_value=None):
+        r = await _finish_wizard(hass, gateway, True)
+        assert r["type"] == "create_entry"
+        await hass.async_block_till_done()
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entry.state.value == "loaded" and entry.data["create_dashboard"] is False
+    assert note.call_args.kwargs["notification_id"] == "eg4_tou_dashboard"
+
+
+async def test_dashboard_save_failure_leaves_nothing_behind(hass: HomeAssistant, gateway):
+    await _lovelace(hass)
+    from custom_components.eg4_tou import dashboard as dash
+    with patch("custom_components.eg4_tou.dashboard.load_yaml_dict", side_effect=OSError("boom")):
+        assert await dash.async_create_dashboard(hass) == dash.UNAVAILABLE
+    assert dash._find_item(dash._collection(hass)) is None
+
+    async def failing_save(self, config):
+        raise OSError("disk full")
+    from homeassistant.components.lovelace.dashboard import LovelaceStorage
+    with patch.object(LovelaceStorage, "async_save", failing_save):
+        assert await dash.async_create_dashboard(hass) == dash.UNAVAILABLE
+    assert dash._find_item(dash._collection(hass)) is None
+
+
+def test_the_shipped_dashboard_is_valid_yaml_with_both_cards():
+    from custom_components.eg4_tou.dashboard import DASHBOARD_FILE
+    from homeassistant.util.yaml import load_yaml_dict
+    cfg = load_yaml_dict(str(DASHBOARD_FILE))
+    text = DASHBOARD_FILE.read_text()
+    assert cfg["title"] == "EG4 TOU" and cfg["views"][0]["path"] == "schedule"
+    assert "custom:eg4-tou-rules-card" in text and "custom:eg4-tou-timeline-card" in text
+
+
+async def test_dashboard_helpers_cope_with_other_home_assistant_shapes(hass: HomeAssistant):
+    from custom_components.eg4_tou import dashboard as dash
+    # no websocket handler at all, or one without a collection behind it
+    hass.data["websocket_api"] = {}
+    assert dash._collection(hass) is None
+    hass.data["websocket_api"] = {"lovelace/dashboards/create": (lambda *a: None, None)}
+    assert dash._collection(hass) is None
+    # a handler wrapped by a decorator (as require_admin does) still leads to the collection
+    class Owner:
+        storage_collection = "coll"
+        def ws_create_item(self): ...
+    wrapped = lambda *a: None  # noqa: E731
+    wrapped.__wrapped__ = Owner().ws_create_item
+    hass.data["websocket_api"] = {"lovelace/dashboards/create": (wrapped, None)}
+    assert dash._collection(hass) == "coll"
+    hass.data["websocket_api"] = {}
+    # old Home Assistant keeps the live dashboards in a dict, new ones in a dataclass
+    hass.data["lovelace"] = {"dashboards": {"x": 1}}
+    assert dash._live_dashboards(hass) == {"x": 1}
+    hass.data["lovelace"] = None
+    assert dash._live_dashboards(hass) is None
+    assert await dash.async_create_dashboard(hass) == dash.UNAVAILABLE
+    await dash.async_remove_dashboard(hass)      # nothing to remove, must not raise
+
+
+async def test_dashboard_removal_failure_is_only_logged(hass: HomeAssistant, caplog):
+    await _lovelace(hass)
+    from custom_components.eg4_tou import dashboard as dash
+    assert await dash.async_create_dashboard(hass) == dash.CREATED
+    coll = dash._collection(hass)
+    with patch.object(type(coll), "async_delete_item", side_effect=OSError("boom")):
+        await dash.async_remove_dashboard(hass)
+    assert "Could not remove the EG4 TOU dashboard" in caplog.text
+    assert await dash.async_create_dashboard(hass) == dash.EXISTS
+    await dash.async_remove_dashboard(hass)
+    assert dash._find_item(coll) is None

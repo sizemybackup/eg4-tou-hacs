@@ -40,8 +40,10 @@ tariff preset; AC First windows are derived automatically as the complement.
 
 ## Dashboard
 
-A ready-made dashboard (core cards only, no custom JavaScript) is in
-[`dashboards/eg4_tou_dashboard.yaml`](dashboards/eg4_tou_dashboard.yaml): status tiles
+The setup wizard's last step creates a ready-made **EG4 TOU** dashboard for you (tick
+*Create the EG4 TOU dashboard*, on by default). It appears in the sidebar at `/eg4-tou`. An existing dashboard
+at that address is never touched, and the dashboard is removed again when you remove the integration. The same
+file is [`custom_components/eg4_tou/dashboard.yaml`](custom_components/eg4_tou/dashboard.yaml): status tiles
 (mode, today's profile, settings out of sync), a **TOU & AC First Rules** status table (season and day type, billing window, next window, power
 source, grid charging, next charge and inverter schedule, all with live countdowns; add your battery
 sensors to the card to get Battery and Peak Reserve rows too), a **24-hour timeline** of today's on-peak hours,
@@ -50,8 +52,9 @@ drawn underneath if they differ from the plan), a **Today's rules** table showin
 rule the plan, what the inverter holds now and whether they match, the list of pending
 changes, and all the controls.
 
-Install it: Settings, Dashboards, Add dashboard, *New dashboard from scratch*; open it,
-three dots, Edit dashboard, three dots, **Raw configuration editor**, paste the file.
+To add it by hand instead (you unticked the box, or Home Assistant could not create it and told you so): Settings,
+Dashboards, Add dashboard, *New dashboard from scratch*; open it, three dots, Edit dashboard, three dots,
+**Raw configuration editor**, paste the file.
 The rules tables find the integration's entities by themselves. Tiles and controls use
 the default entity ids (`sensor.eg4_tou_*`, `switch.eg4_tou_*`, ...); if yours differ,
 find/replace them in the raw editor.
@@ -245,7 +248,7 @@ actions:
 ## Removing the integration
 
 1. Settings, Devices & services, **EG4 Local TOU Manager**, three dots, **Delete**.
-2. Remove it from HACS / the Marketplace, delete the dashboard if you added it, and restart Home Assistant.
+2. Remove it from HACS / the Marketplace, delete the dashboard if you added it by hand (the one the wizard created goes with the integration), and restart Home Assistant.
 
 Removing it does **not** change the inverter: the last charge windows, hold windows and limits it wrote
 stay in place. Set them back on the inverter or in the EG4 app if you want different ones.
@@ -313,8 +316,8 @@ cards rendering in a real browser, Configure and the reload it triggers, a Home 
 clean uninstall. Run it before tagging a release:
 
 ```
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.9.0
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.9.0 \
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.10.0
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.10.0 \
     --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4        # oldest supported version
 ```
 

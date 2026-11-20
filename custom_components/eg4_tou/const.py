@@ -9,6 +9,8 @@ CONF_TARIFF = "tariff"
 CONF_CUSTOM = "custom_tariff"
 CONF_COUNTRY = "country"
 CONF_SUBDIV = "subdiv"
+CONF_CREATE_DASHBOARD = "create_dashboard"   # wizard choice, consumed once at first setup
+CONF_DASHBOARD_URL = "dashboard_url"          # set when we created the dashboard, so we can remove it
 
 # Mutable settings, stored in entry.options
 OPT_ENABLED = "enabled"
