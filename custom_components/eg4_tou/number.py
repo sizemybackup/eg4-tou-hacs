@@ -3,11 +3,11 @@ from __future__ import annotations
 from homeassistant.components.number import NumberEntity, NumberMode
 
 from .base import TouEntity
-from .const import (DOMAIN, OPT_AC_KW, OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER)
+from .const import (OPT_AC_KW, OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    c = hass.data[DOMAIN][entry.entry_id]
+    c = entry.runtime_data
     async_add_entities([
         OptionNumber(c, OPT_END_SOC_SUMMER, "Charge limit, summer weekday", 20, 100, 1, "%"),
         OptionNumber(c, OPT_END_SOC_WINTER, "Charge limit, winter weekday", 20, 100, 1, "%"),

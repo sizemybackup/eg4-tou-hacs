@@ -99,6 +99,14 @@ Then: Settings, Devices & services, **Add integration**, search for **EG4 Local 
 3. Choose **read-only** (default, nothing is ever written) or **read-write**
    (asks you to confirm).
 
+**Later changes:** new gateway address, port, unit id or holiday country/state: integration's
+three-dot menu, **Reconfigure** (tariff, mode and charge settings are kept; the new gateway is
+probed read-only first). Tariff: the *Configure* button.
+
+**Reporting a problem:** on the integration's page, three dots, **Download diagnostics**, and attach
+the file to the issue. It contains your settings, the planned and current register values and the
+week's schedule; the gateway address is removed.
+
 A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manager](https://sizemybackup.com/eg4-local-tou-manager-home-assistant.html).
 
 ## Security
@@ -156,8 +164,8 @@ cards rendering in a real browser, Configure and the reload it triggers, a Home 
 clean uninstall. Run it before tagging a release:
 
 ```
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.7.4
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.7.4 \
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.8.0
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.8.0 \
     --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4        # oldest supported version
 ```
 

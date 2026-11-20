@@ -114,7 +114,7 @@ async def test_live_mode_converges_then_stays_quiet(hass: HomeAssistant, gateway
     assert gateway.writes, "live mode should have written differences"
     assert hass.states.get("sensor.eg4_tou_registers_out_of_sync").state == "0"
     n = len(gateway.writes)
-    coordinator = hass.data[DOMAIN][e.entry_id]
+    coordinator = e.runtime_data
     await coordinator.async_refresh()
     assert len(gateway.writes) == n, "second cycle must be idempotent"
     # end SOC lowered 90 -> target: start SOC (160) must be written before end SOC (161)
@@ -323,7 +323,7 @@ async def test_bge_preset_uses_bge_holidays_and_custom_can_opt_out(hass: HomeAss
     e.add_to_hass(hass)
     await hass.config_entries.async_setup(e.entry_id)
     await hass.async_block_till_done()
-    c = hass.data[DOMAIN][e.entry_id]
+    c = e.runtime_data
     assert c._day_info(date(2026, 11, 11)) == (False, "Workday")           # Veterans Day: BGE bills peak
     assert c._day_info(date(2026, 11, 27)) == (False, "Workday")           # day after Thanksgiving
     assert c._day_info(date(2026, 11, 26)) == (True, "Holiday: Thanksgiving")
@@ -393,7 +393,6 @@ async def test_setup_rejects_public_and_malformed_gateway_addresses(hass: HomeAs
 
 
 async def test_numbers_are_bounded_by_the_form(hass: HomeAssistant):
-    import voluptuous as vol
     r = await _manual(hass)
     for bad in ({"port": 0, "unit": 1}, {"port": 70000, "unit": 1}, {"port": 502, "unit": 0}, {"port": 502, "unit": 300}):
         with pytest.raises(Exception):
@@ -424,6 +423,87 @@ async def test_large_profile_attributes_are_not_recorded(hass: HomeAssistant, ga
     await hass.async_block_till_done()
     attrs = hass.states.get("sensor.eg4_tou_active_profile").attributes
     recorded = set(attrs) - ProfileSensor._unrecorded_attributes
-    assert recorded <= {"peak_windows", "friendly_name", "icon"}, recorded
+    assert recorded <= {"peak_windows", "friendly_name", "icon", "device_class", "options"}, recorded
     size = len(json.dumps({k: attrs[k] for k in ProfileSensor._unrecorded_attributes if k in attrs}, default=str))
     print(f"unrecorded attribute payload: {size} bytes")
+
+
+async def test_entity_names_come_from_translations_and_enums(hass: HomeAssistant, gateway):
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.eg4_tou_read_only_mode").name == "EG4 TOU Manager Read-only mode"
+    assert hass.states.get("number.eg4_tou_charge_limit_weekend_holiday").name == \
+        "EG4 TOU Manager Charge limit, weekend / holiday"
+    status = hass.states.get("sensor.eg4_tou_controller_status")
+    assert status.attributes["device_class"] == "enum"
+    assert status.attributes["options"] == ["off", "read_only", "live"] and status.state in status.attributes["options"]
+    profile = hass.states.get("sensor.eg4_tou_active_profile")
+    assert profile.state in profile.attributes["options"]
+
+
+async def test_setup_rejects_unknown_country_and_region(hass: HomeAssistant, gateway):
+    base = {"host": "127.0.0.1", "port": gateway.port, "unit": 1}
+    r = await _manual(hass)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {**base, "country": "XX", "subdiv": ""})
+    assert r["type"] == "form" and r["errors"] == {"country": "bad_country"}
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {**base, "country": "US", "subdiv": "ZZ"})
+    assert r["errors"] == {"subdiv": "bad_subdiv"}
+    # case is normalised to the library's codes
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {**base, "country": "us", "subdiv": "md"})
+    assert r["step_id"] == "tariff"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"mode": "read_only"})
+    assert r["data"]["country"] == "US" and r["data"]["subdiv"] == "MD"
+
+
+async def test_reconfigure_changes_gateway_and_keeps_settings(hass: HomeAssistant, gateway):
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    hass.config_entries.async_update_entry(e, title="EG4 TOU (127.0.0.1)", options={"enabled": True, "dry_run": True})
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+
+    other = FakeGateway({160: 20, 161: 80})
+    other.port = await other.start()
+    try:
+        r = await e.start_reconfigure_flow(hass)
+        assert r["type"] == "form" and r["step_id"] == "reconfigure"
+        new = {"host": "127.0.0.1", "port": other.port, "unit": 1, "country": "US", "subdiv": "MD"}
+        bad = await hass.config_entries.flow.async_configure(r["flow_id"], {**new, "port": 1})
+        assert bad["errors"] == {"base": "cannot_connect"}
+        assert e.data["port"] == gateway.port, "nothing saved after a failed probe"
+        r = await hass.config_entries.flow.async_configure(r["flow_id"], new)
+        assert r["type"] == "abort" and r["reason"] == "reconfigure_successful"
+        await hass.async_block_till_done()
+        assert e.data["port"] == other.port and e.data["tariff"] == "bge_rl"
+        assert e.unique_id == f"127.0.0.1:{other.port}:1"
+        assert e.options["dry_run"] is True
+        assert e.runtime_data.client._cfg.port == other.port, "reloaded with the new gateway"
+        assert other.writes == []
+    finally:
+        other.server.close()
+
+
+async def test_reconfigure_refuses_a_gateway_another_entry_uses(hass: HomeAssistant, gateway):
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    MockConfigEntry(domain=DOMAIN, unique_id="127.0.0.1:1502:1", data={}).add_to_hass(hass)
+    r = await e.start_reconfigure_flow(hass)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "127.0.0.1", "port": 1502, "unit": 1, "country": "US", "subdiv": "MD"})
+    assert r["errors"] == {"base": "already_configured"}
+
+
+async def test_diagnostics_redact_the_gateway(hass: HomeAssistant, gateway):
+    from custom_components.eg4_tou.diagnostics import async_get_config_entry_diagnostics
+
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    d = await async_get_config_entry_diagnostics(hass, e)
+    assert d["config"]["host"] == "**REDACTED**"
+    assert "127.0.0.1" not in str(d)
+    assert d["mode"] == "off" and d["registers"]["161"]["inverter"] == "90"

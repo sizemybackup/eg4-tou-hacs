@@ -5,11 +5,11 @@ from datetime import time
 from homeassistant.components.time import TimeEntity
 
 from .base import TouEntity
-from .const import DOMAIN, OPT_CHARGE_END, OPT_CHARGE_START
+from .const import OPT_CHARGE_END, OPT_CHARGE_START
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    c = hass.data[DOMAIN][entry.entry_id]
+    c = entry.runtime_data
     async_add_entities([OptionTime(c, OPT_CHARGE_START, "Charge start"),
                         OptionTime(c, OPT_CHARGE_END, "Charge end")])
 

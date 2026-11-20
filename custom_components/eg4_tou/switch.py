@@ -4,11 +4,11 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import EntityCategory
 
 from .base import TouEntity
-from .const import DOMAIN, OPT_DRY_RUN, OPT_ENABLED
+from .const import OPT_DRY_RUN, OPT_ENABLED
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    c = hass.data[DOMAIN][entry.entry_id]
+    c = entry.runtime_data
     async_add_entities([OptionSwitch(c, OPT_ENABLED, "Controller enabled", "mdi:power"),
                         OptionSwitch(c, OPT_DRY_RUN, "Read-only mode", "mdi:test-tube")])
 

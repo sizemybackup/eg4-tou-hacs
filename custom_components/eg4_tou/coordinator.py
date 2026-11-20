@@ -49,7 +49,8 @@ def settings_from_options(o) -> Settings:
 
 class TouCoordinator(DataUpdateCoordinator[TouData]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(minutes=SCAN_INTERVAL_MIN))
+        super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN,
+                         update_interval=timedelta(minutes=SCAN_INTERVAL_MIN))
         self.entry = entry
         d = entry.data
         self.client = Eg4Modbus(ModbusConfig(d[CONF_HOST], d.get(CONF_PORT, 502), d.get(CONF_UNIT, 1)))

@@ -61,6 +61,17 @@
           "end": "Peak ends",
           "add_another": "Add a second peak window"
         }
+      },
+      "reconfigure": {
+        "title": "Change gateway or holiday region",
+        "description": "Change the gateway's address, port or unit id, or the country and state used for public holidays. Your tariff, mode and charge settings are kept. The new gateway is checked with a read-only probe before anything is saved.",
+        "data": {
+          "host": "Gateway address",
+          "port": "Modbus TCP port",
+          "unit": "Modbus unit id",
+          "country": "Country code for holidays (e.g. US)",
+          "subdiv": "State/region for holidays (optional, e.g. MD)"
+        }
       }
     },
     "error": {
@@ -72,10 +83,14 @@
       "peak_overlap": "The two peak windows overlap.",
       "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day.",
       "invalid_host": "Enter an IP address or a host name (letters, digits, dots and hyphens).",
-      "public_address": "That is a public internet address. Modbus has no authentication, so the gateway must be on your local network: use its local (private) address."
+      "public_address": "That is a public internet address. Modbus has no authentication, so the gateway must be on your local network: use its local (private) address.",
+      "bad_country": "Unknown country code. Use the two-letter code, for example US or CA.",
+      "bad_subdiv": "Unknown state/region for that country. Use its code (for example MD), or leave it empty.",
+      "already_configured": "Another EG4 TOU entry already uses that gateway."
     },
     "abort": {
-      "already_configured": "This gateway is already configured."
+      "already_configured": "This gateway is already configured.",
+      "reconfigure_successful": "Saved. The integration has been reloaded with the new settings."
     }
   },
   "options": {
@@ -127,6 +142,59 @@
       "peak_order": "The peak must end after it starts, on the same day. Midnight-crossing peaks: split them into two windows.",
       "peak_overlap": "The two peak windows overlap.",
       "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "profile": {
+        "name": "Active profile",
+        "state": {
+          "summer": "Summer weekday",
+          "winter": "Winter weekday",
+          "offpeak": "Weekend / holiday"
+        }
+      },
+      "pending": {
+        "name": "Registers out of sync"
+      },
+      "status": {
+        "name": "Controller status",
+        "state": {
+          "off": "Off",
+          "read_only": "Read-only",
+          "live": "Live (writing)"
+        }
+      }
+    },
+    "switch": {
+      "enabled": {
+        "name": "Controller enabled"
+      },
+      "dry_run": {
+        "name": "Read-only mode"
+      }
+    },
+    "number": {
+      "end_soc_summer": {
+        "name": "Charge limit, summer weekday"
+      },
+      "end_soc_winter": {
+        "name": "Charge limit, winter weekday"
+      },
+      "end_soc_offpeak": {
+        "name": "Charge limit, weekend / holiday"
+      },
+      "ac_charge_kw": {
+        "name": "AC charge power"
+      }
+    },
+    "time": {
+      "charge_start": {
+        "name": "Charge start"
+      },
+      "charge_end": {
+        "name": "Charge end"
+      }
     }
   }
 }

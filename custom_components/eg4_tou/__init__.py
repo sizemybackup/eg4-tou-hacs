@@ -43,18 +43,15 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
     coordinator = TouCoordinator(hass, entry)
     await coordinator.async_load_holidays()
     await coordinator.async_config_entry_first_refresh()
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
     return True
 
 
 async def _options_updated(hass: "HomeAssistant", entry: "ConfigEntry") -> None:
-    await hass.data[DOMAIN][entry.entry_id].async_request_refresh()
+    await entry.runtime_data.async_request_refresh()
 
 
 async def async_unload_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
-    ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-    return ok
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

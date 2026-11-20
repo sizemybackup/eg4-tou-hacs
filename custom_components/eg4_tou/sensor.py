@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 
 from .base import TouEntity
 from .planner import rules_table, timeline
-from .const import DOMAIN
 from .modbus import WRITE_LIMITS
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    c = hass.data[DOMAIN][entry.entry_id]
+    c = entry.runtime_data
     async_add_entities([ProfileSensor(c), PendingSensor(c), StatusSensor(c)])
 
 
 class ProfileSensor(TouEntity, SensorEntity):
     _domain = "sensor"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["summer", "winter", "offpeak"]
     # These feed the dashboard cards from the live state only. Recording them would store several KB
     # in the history database on every update, and the recorder drops attributes over 16 KB anyway.
     # peak_windows stays recorded: it is short and useful in history.
@@ -58,6 +59,8 @@ class PendingSensor(TouEntity, SensorEntity):
 
 class StatusSensor(TouEntity, SensorEntity):
     _domain = "sensor"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["off", "read_only", "live"]
     _attr_icon = "mdi:information-outline"
 
     def __init__(self, c):

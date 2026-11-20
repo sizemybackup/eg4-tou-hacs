@@ -126,7 +126,6 @@ def test_timeline_structured_windows():
 
 
 def test_week_schedule_weekends_holidays_and_season_change():
-    from datetime import timedelta
     from custom_components.eg4_tou.planner import week_schedule
     hol = {date(2026, 11, 26): "Thanksgiving"}
 

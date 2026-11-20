@@ -59,6 +59,66 @@ def host_error(host: str) -> str | None:
     return None if is_local_address(host) else "public_address"
 
 
+def holiday_region(country: str, subdiv: str) -> tuple[str, str, dict[str, str]]:
+    """Normalise country/subdivision against the holidays library: (country, subdiv, errors).
+    Blocking (the library imports lazily): run it in the executor."""
+    import holidays
+
+    country, subdiv = country.strip().upper(), subdiv.strip()
+    supported = holidays.list_supported_countries()
+    if country not in supported:
+        return country, subdiv, {CONF_COUNTRY: "bad_country"}
+    if subdiv:
+        match = {s.upper(): s for s in supported[country]}.get(subdiv.upper())
+        if match is None:
+            return country, subdiv, {CONF_SUBDIV: "bad_subdiv"}
+        subdiv = match
+    return country, subdiv, {}
+
+
+CONNECTION_KEYS = (CONF_HOST, CONF_PORT, CONF_UNIT, CONF_COUNTRY, CONF_SUBDIV)
+
+
+async def _clean_connection(hass, user_input) -> tuple[dict, dict[str, str]]:
+    """Normalise and check the gateway and holiday-region fields (no network access)."""
+    host = str(user_input[CONF_HOST]).strip()
+    data = {CONF_HOST: host, CONF_PORT: int(user_input[CONF_PORT]), CONF_UNIT: int(user_input[CONF_UNIT])}
+    errors: dict[str, str] = {}
+    if err := host_error(host):
+        errors[CONF_HOST] = err
+    country, subdiv, region_errors = await hass.async_add_executor_job(
+        holiday_region, str(user_input.get(CONF_COUNTRY) or ""), str(user_input.get(CONF_SUBDIV) or ""))
+    errors.update(region_errors)
+    data.update({CONF_COUNTRY: country, CONF_SUBDIV: subdiv})
+    return data, errors
+
+
+def _title(data) -> str:
+    return f"EG4 TOU ({data[CONF_HOST]})"
+
+
+def _unique_id(data) -> str:
+    return f"{data[CONF_HOST]}:{data[CONF_PORT]}:{data[CONF_UNIT]}"
+
+
+async def _probe(data) -> bool:
+    """Read-only probe: AC charge start/end SOC."""
+    try:
+        await Eg4Modbus(ModbusConfig(data[CONF_HOST], data[CONF_PORT], data[CONF_UNIT])).read(160, 2)
+    except ModbusError:
+        return False
+    return True
+
+
+def _port_unit_fields(d) -> dict:
+    return {
+        vol.Required(CONF_PORT, default=int(d.get(CONF_PORT, 502))): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=1, max=65535, step=1, mode=selector.NumberSelectorMode.BOX)),
+        vol.Required(CONF_UNIT, default=int(d.get(CONF_UNIT, 1))): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=1, max=247, step=1, mode=selector.NumberSelectorMode.BOX)),
+    }
+
+
 class _TariffSteps:
     """Mixin. Subclasses implement _tariff_done(tariff_key, custom_or_None)."""
 
@@ -180,23 +240,14 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
         rescan = bool(user_input and user_input.get("rescan"))
         if user_input is not None and not rescan:
             # raise_on_progress=False: an abandoned earlier attempt must not block a fresh one
-            host = str(user_input[CONF_HOST]).strip()
-            port, unit = int(user_input[CONF_PORT]), int(user_input[CONF_UNIT])
-            err = host_error(host)
-            if err:
-                errors[CONF_HOST] = err
-            else:
-                await self.async_set_unique_id(f"{host}:{port}:{unit}", raise_on_progress=False)
+            data, errors = await _clean_connection(self.hass, user_input)
+            if not errors:
+                await self.async_set_unique_id(_unique_id(data), raise_on_progress=False)
                 self._abort_if_unique_id_configured()
-                client = Eg4Modbus(ModbusConfig(host, port, unit))
-                try:
-                    await client.read(160, 2)  # read-only probe: AC charge start/end SOC
-                except ModbusError:
-                    errors["base"] = "cannot_connect"
-                else:
-                    self._data = {k: v for k, v in user_input.items() if k != "rescan"}
-                    self._data.update({CONF_HOST: host, CONF_PORT: port, CONF_UNIT: unit})
+                if await _probe(data):
+                    self._data = data
                     return await self._begin_tariff()
+                errors["base"] = "cannot_connect"
 
         if user_input is None or rescan:
             self._found = {f.host: f for f in await async_scan(self.hass)}
@@ -219,16 +270,39 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
                     "on this network and set to Modbus port 502.")
         schema = vol.Schema({
             vol.Required(CONF_HOST, default=d.get(CONF_HOST) or next(iter(found), "")): host_field,
-            vol.Required(CONF_PORT, default=int(d.get(CONF_PORT, 502))): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=65535, step=1, mode=selector.NumberSelectorMode.BOX)),
-            vol.Required(CONF_UNIT, default=int(d.get(CONF_UNIT, 1))): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=247, step=1, mode=selector.NumberSelectorMode.BOX)),
+            **_port_unit_fields(d),
             vol.Required(CONF_COUNTRY, default=d.get(CONF_COUNTRY) or self.hass.config.country or "US"): str,
             vol.Optional(CONF_SUBDIV, default=d.get(CONF_SUBDIV, "")): str,
             vol.Optional("rescan", default=False): bool,
         })
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors,
                                     description_placeholders={"scan_result": note, "guide_url": GUIDE_URL})
+
+    async def async_step_reconfigure(self, user_input=None):
+        """Change the gateway address/port/unit or the holiday region without re-adding the integration.
+        Tariff, mode and charge settings are kept."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data, errors = await _clean_connection(self.hass, user_input)
+            if not errors:
+                uid = _unique_id(data)
+                if any(e.unique_id == uid for e in self._async_current_entries() if e.entry_id != entry.entry_id):
+                    errors["base"] = "already_configured"
+                elif not await _probe(data):
+                    errors["base"] = "cannot_connect"
+                else:
+                    # keep a title the user renamed; refresh the default one that shows the address
+                    title = {"title": _title(data)} if entry.title == _title(entry.data) else {}
+                    return self.async_update_reload_and_abort(entry, unique_id=uid, data_updates=data, **title)
+        d = {**entry.data, **(user_input or {})}
+        schema = vol.Schema({
+            vol.Required(CONF_HOST, default=d[CONF_HOST]): str,
+            **_port_unit_fields(d),
+            vol.Required(CONF_COUNTRY, default=d.get(CONF_COUNTRY) or "US"): str,
+            vol.Optional(CONF_SUBDIV, default=d.get(CONF_SUBDIV) or ""): str,
+        })
+        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
 
     async def _tariff_done(self, key, custom):
         self._data[CONF_TARIFF] = key
@@ -261,7 +335,7 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
 
     def _finish(self, read_only: bool):
         return self.async_create_entry(
-            title=f"EG4 TOU ({self._data[CONF_HOST]})", data=self._data,
+            title=_title(self._data), data=self._data,
             options={OPT_ENABLED: True, OPT_DRY_RUN: read_only})
 
 
