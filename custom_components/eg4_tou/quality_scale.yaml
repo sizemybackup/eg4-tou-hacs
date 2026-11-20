@@ -6,7 +6,7 @@
 # been reviewed by the Home Assistant team. The CI runs the tests (coverage), strict mypy and hassfest.
 rules:
   # Bronze
-  action-setup: done  # eg4_tou.update_settings is registered in async_setup (services.py)
+  action-setup: done  # eg4_tou.update_settings, set_tariff, save_tariff_as and delete_tariff are registered in async_setup (services.py)
   appropriate-polling: done  # every 10 minutes; schedules change at most a few times a day
   brands:
     status: done

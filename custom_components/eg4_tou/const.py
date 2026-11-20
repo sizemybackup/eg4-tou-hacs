@@ -1,5 +1,5 @@
 DOMAIN = "eg4_tou"
-PLATFORMS = ["sensor", "switch", "number", "time"]
+PLATFORMS = ["sensor", "switch", "number", "time", "select"]
 SCAN_INTERVAL_MIN = 10
 
 CONF_HOST = "host"
@@ -21,7 +21,8 @@ OPT_END_SOC_SUMMER = "end_soc_summer"
 OPT_END_SOC_WINTER = "end_soc_winter"
 OPT_END_SOC_OFFPEAK = "end_soc_offpeak"
 OPT_AC_KW = "ac_charge_kw"
-OPT_PEAKS = "peak_overrides"   # {season: [[start, end], ...]} set from the timeline card; layered over the tariff
+OPT_TARIFFS = "tariffs"          # the tariff library: {name: {"base": preset key | "custom": {...}, "peaks": {season: windows}}}
+OPT_ACTIVE = "active_tariff"     # name of the tariff in use
 
 DEFAULT_OPTIONS = {
     OPT_ENABLED: False,   # never write until the user turns it on
@@ -32,7 +33,6 @@ DEFAULT_OPTIONS = {
     OPT_END_SOC_WINTER: 70,
     OPT_END_SOC_OFFPEAK: 50,
     OPT_AC_KW: 5.0,
-    OPT_PEAKS: {},
 }
 
 # Allowed ranges for the numeric settings (shared by the number entities and the update_settings service)

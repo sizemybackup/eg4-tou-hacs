@@ -16,11 +16,12 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_COUNTRY, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT, DOMAIN,
-    OPT_AC_KW, OPT_CHARGE_END, OPT_CHARGE_START, OPT_DRY_RUN, OPT_ENABLED, OPT_PEAKS,
-    OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, SCAN_INTERVAL_MIN,
+    OPT_AC_KW, OPT_CHARGE_END, OPT_CHARGE_START, OPT_DRY_RUN, OPT_ENABLED,
+    OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, OPT_TARIFFS, SCAN_INTERVAL_MIN,
 )
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError, WriteRefused, unpack_time
-from .planner import PRESETS, Plan, Settings, build_plan, peak_edit_info, tariff_from_custom, tariff_with_overrides, week_schedule
+from .planner import Plan, Settings, Tariff, build_plan, peak_edit_info, week_schedule
+from .tariffs import active_of, base_of, effective_of
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,16 +54,26 @@ def settings_from_options(o: Mapping[str, Any]) -> Settings:
 
 
 class TouCoordinator(DataUpdateCoordinator[TouData]):
+    tariff_name: str
+    base_tariff: Tariff    # the active tariff as defined (preset or custom)
+    tariff: Tariff         # ... with the user's own on-peak hours applied
+    _spec: dict[str, Any]
+
     def __init__(self, hass: HomeAssistant, entry: TouConfigEntry) -> None:
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN,
                          update_interval=timedelta(minutes=SCAN_INTERVAL_MIN))
         self.entry = entry
         d = entry.data
         self.client = Eg4Modbus(ModbusConfig(d[CONF_HOST], d.get(CONF_PORT, 502), d.get(CONF_UNIT, 1)))
-        self.base_tariff = tariff_from_custom(d[CONF_CUSTOM]) if d[CONF_TARIFF] == "custom" else PRESETS[d[CONF_TARIFF]]
-        self.tariff = tariff_with_overrides(self.base_tariff, entry.options.get(OPT_PEAKS, {}))
+        self.load_tariff()
         self._holidays: holidays.HolidayBase | None = None  # built off the event loop in async_load_holidays()
         self._last_write = "never"
+
+    def load_tariff(self) -> None:
+        """Pick the active tariff from the entry's options (called on every update, so switching or
+        editing a tariff takes effect on the next refresh)."""
+        self.tariff_name, self._spec = active_of(self.entry.options)
+        self.base_tariff, self.tariff = base_of(self._spec), effective_of(self._spec)
 
     async def async_load_holidays(self) -> None:
         """The holidays library imports country modules lazily, which blocks; do it in a worker thread."""
@@ -107,8 +118,7 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
             raise UpdateFailed(translation_domain=DOMAIN, translation_key="read_failed",
                                translation_placeholders={"error": str(exc)}) from exc
 
-        overrides = self.entry.options.get(OPT_PEAKS, {})
-        self.tariff = tariff_with_overrides(self.base_tariff, overrides)   # the card can change these at any time
+        self.load_tariff()                                                  # the card can switch or edit tariffs at any time
         today = dt_util.now().date()
         offpeak, _ = self._day_info(today)
         plan = build_plan(today, self.tariff, settings_from_options(self.entry.options),
@@ -130,7 +140,14 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
                  "end_soc": plan.registers[161], "ac_kw": plan.registers[66] / 10}
         week = week_schedule(today, self.tariff, settings, self._day_info)
         return TouData(current, plan, pending, mode, self._last_write, peaks, peak_list, week, facts,
-                       peak_edit=peak_edit_info(today, self.tariff, self.base_tariff, overrides))
+                       peak_edit=self._peak_edit(today))
+
+    def _peak_edit(self, today: date) -> dict[str, Any]:
+        lib = self.entry.options.get(OPT_TARIFFS) or {}
+        info = peak_edit_info(today, self.tariff, self.base_tariff, self._spec.get("peaks") or {})
+        info.update({"tariff": self.tariff_name, "builtin": bool(self._spec.get("builtin")),
+                     "tariffs": [{"name": n, "builtin": bool(s.get("builtin"))} for n, s in lib.items()]})
+        return info
 
     async def _apply(self, pending: list[tuple[int, int, int | None]]) -> str:
         done: list[int] = []

@@ -211,8 +211,9 @@ async def test_options_flow_changes_tariff(hass: HomeAssistant, gateway):
     r = await f.async_configure(r["flow_id"], {"tariff": "single", "offpeak_weekends": True})
     r = await f.async_configure(r["flow_id"], {"kind": "winter"})
     r = await f.async_configure(r["flow_id"], {"start": "18:00:00", "end": "22:00:00", "add_another": False})
+    r = await f.async_configure(r["flow_id"], {"name": "Evening"})
     assert r["type"] == "create_entry"
-    assert e.data["tariff"] == "custom" and e.data["custom_tariff"]["peaks"] == {"winter": [["18:00", "22:00"]]}
+    assert e.options["tariffs"]["Evening"]["custom"]["peaks"] == {"winter": [["18:00", "22:00"]]}
 
 
 from custom_components.eg4_tou.scanner import Found, scan_hosts
@@ -855,12 +856,17 @@ async def test_update_settings_is_admin_only(hass: HomeAssistant, gateway, hass_
     assert e.options["end_soc_winter"] == 70
 
 
-# ---- editable on-peak windows (peak overrides) -------------------------------------------------
+# ---- the tariff library: named tariffs, switching, editing, saving as new ---------------------
 from datetime import date as _date  # noqa: E402
+from custom_components.eg4_tou import tariffs  # noqa: E402
 from custom_components.eg4_tou.planner import BGE_RL, peak_edit_info, tariff_with_overrides  # noqa: E402
-from custom_components.eg4_tou.services import merge_peaks  # noqa: E402
 
 WINTER = [["07:00", "11:00"], ["17:00", "21:00"]]
+CUSTOM = {"seasons": {"winter": {"start": [1, 1], "end": [12, 31]}}, "peaks": {"winter": [["16:00", "20:00"]]}, "offpeak_weekends": True}
+
+
+def _lib(hass, e):
+    return e.options["tariffs"], e.options["active_tariff"]
 
 
 def test_tariff_overrides_replace_only_the_named_season_and_ignore_bad_ones():
@@ -869,7 +875,7 @@ def test_tariff_overrides_replace_only_the_named_season_and_ignore_bad_ones():
     assert t.peaks["summer"] == BGE_RL.peaks["summer"]      # invalid window ignored
     assert "spring" not in t.peaks                           # unknown season ignored
     assert t.holiday_fn is BGE_RL.holiday_fn and t.shift_fn is BGE_RL.shift_fn
-    assert tariff_with_overrides(BGE_RL, {}) .peaks == BGE_RL.peaks
+    assert tariff_with_overrides(BGE_RL, {}).peaks == BGE_RL.peaks
 
 
 def test_peak_edit_info_reports_season_default_override_and_shift():
@@ -881,43 +887,114 @@ def test_peak_edit_info_reports_season_default_override_and_shift():
     assert peak_edit_info(_date(2026, 7, 15), BGE_RL, BGE_RL, {})["overridden"] is False
 
 
-def test_merge_peaks_rules():
-    seasons = {"summer": BGE_RL.peaks["summer"], "winter": BGE_RL.peaks["winter"]}
-    assert merge_peaks({}, {"winter": [["17:00", "21:00"], ["06:00", "10:00"]]}, seasons) == {"winter": [["06:00", "10:00"], ["17:00", "21:00"]]}
-    assert merge_peaks({"winter": [["06:00", "10:00"]]}, {"winter": None}, seasons) == {}
-    assert merge_peaks({"summer": [["09:00", "19:00"]]}, {"winter": WINTER}, seasons) == {"summer": [["09:00", "19:00"]]}   # same as tariff: no override
-    assert merge_peaks({}, {"winter": []}, seasons) == {"winter": []}                                                   # no on-peak at all
+def test_library_pure_logic():
+    opts = tariffs.initial_library({"tariff": "bge_rl"})
+    assert list(opts["tariffs"]) == [tariffs.EXAMPLE_NAME] and opts["active_tariff"] == tariffs.EXAMPLE_NAME
+    up = tariffs.initial_library({"tariff": "custom", "custom_tariff": CUSTOM})        # an upgraded custom setup keeps its tariff
+    assert up["active_tariff"] == "My tariff" and tariffs.EXAMPLE_NAME in up["tariffs"]
+    assert tariffs.effective_of({"custom": CUSTOM}).peaks["winter"] == (("16:00", "20:00"),)
+    assert tariffs.active_of({"tariffs": opts["tariffs"], "active_tariff": "gone"})[0] == tariffs.EXAMPLE_NAME   # stale name
+    assert tariffs.active_of({})[0] == tariffs.EXAMPLE_NAME                                                       # no library yet
+    with pytest.raises(ServiceValidationError):
+        tariffs.edit_peaks(opts, {"winter": [["06:00", "09:00"]]})                       # the example is read-only
+    with pytest.raises(ServiceValidationError):
+        tariffs.delete(opts, tariffs.EXAMPLE_NAME)
+    with pytest.raises(ServiceValidationError):
+        tariffs.delete(opts, "nope")
+    with pytest.raises(ServiceValidationError):
+        tariffs.activate(opts, "nope")
+    for bad in ("", "   ", "x" * 41):
+        with pytest.raises(ServiceValidationError):
+            tariffs.clean_name(bad, {})
+    with pytest.raises(ServiceValidationError):
+        tariffs.clean_name("a", {"a": {}})
+    with pytest.raises(ServiceValidationError):
+        tariffs.add_custom(opts, "", CUSTOM)
+    with pytest.raises(ServiceValidationError):
+        tariffs.add_custom(opts, tariffs.EXAMPLE_NAME, CUSTOM)                            # cannot overwrite the example
+    # peaks: normalised, validated, back-to-default is not an override
+    base = BGE_RL
+    assert tariffs.merge_peaks({}, {"winter": [["17:00", "21:00"], ["06:00", "10:00"]]}, base) == {"winter": [["06:00", "10:00"], ["17:00", "21:00"]]}
+    assert tariffs.merge_peaks({"winter": [["06:00", "10:00"]]}, {"winter": None}, base) == {}
+    assert tariffs.merge_peaks({"summer": [["09:00", "19:00"]]}, {"winter": WINTER}, base) == {"summer": [["09:00", "19:00"]]}
+    assert tariffs.merge_peaks({}, {"winter": []}, base) == {"winter": []}
     for bad, key in (([["10:00", "10:00"]], "peak_order"), ([["06:00", "10:00"], ["09:00", "12:00"]], "peak_overlap"),
                      ([["01:00", "02:00"], ["03:00", "04:00"], ["05:00", "06:00"]], "too_many_peaks")):
         with pytest.raises(ServiceValidationError) as e:
-            merge_peaks({}, {"winter": bad}, seasons)
+            tariffs.merge_peaks({}, {"winter": bad}, base)
         assert e.value.translation_key == key
     with pytest.raises(ServiceValidationError):
-        merge_peaks({}, {"spring": WINTER}, seasons)
+        tariffs.merge_peaks({}, {"spring": WINTER}, base)
 
 
-async def test_card_can_edit_peaks_and_the_plan_follows(hass: HomeAssistant, gateway):
-    e = await _setup(hass, gateway, enabled=True, dry_run=False)
-    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
-    season = a["peak_edit"]["season"]
-    assert a["peak_edit"]["peaks"] == a["peak_edit"]["default"] and not a["peak_edit"]["overridden"]
-    await _call(hass, e, peaks={season: [["06:30", "09:30"]]})
-    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
-    assert a["peak_edit"]["overridden"] and a["peak_edit"]["peaks"] == [["06:30", "09:30"]]
-    if a["timeline"]["peaks"]:                                   # a weekday: hold windows are the complement
-        assert a["timeline"]["peaks"] == [["06:30", "09:30"]]
-        assert gateway.regs.get(152, 0) == pack_time("00:00") and gateway.regs[153] == pack_time("06:30")
-    await _call(hass, e, peaks={season: None})                   # back to the tariff
-    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
-    assert not a["peak_edit"]["overridden"] and a["peak_edit"]["peaks"] == a["peak_edit"]["default"]
-    with pytest.raises(ServiceValidationError):
-        await _call(hass, e, peaks={season: [["10:00", "09:00"]]})
-
-
-async def test_configure_clears_peak_overrides(hass: HomeAssistant, gateway):
+async def test_new_entries_ship_with_the_example_tariff_and_the_select(hass: HomeAssistant, gateway):
     e = await _setup(hass, gateway)
-    await _call(hass, e, peaks={"winter": [["06:30", "09:30"]]})
-    assert e.options["peak_overrides"]
-    r = await hass.config_entries.options.async_init(e.entry_id)
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True, "offpeak_holidays": True})
-    assert r["type"] == "create_entry" and e.options["peak_overrides"] == {}
+    lib, active = _lib(hass, e)
+    assert list(lib) == [tariffs.EXAMPLE_NAME] and active == tariffs.EXAMPLE_NAME
+    s = hass.states.get("select.eg4_tou_tariff")
+    assert s.state == tariffs.EXAMPLE_NAME and s.attributes["options"] == [tariffs.EXAMPLE_NAME]
+    pe = hass.states.get("sensor.eg4_tou_active_profile").attributes["peak_edit"]
+    assert pe["tariff"] == tariffs.EXAMPLE_NAME and pe["builtin"] is True
+    assert pe["tariffs"] == [{"name": tariffs.EXAMPLE_NAME, "builtin": True}]
+
+
+async def test_save_as_new_tariff_edit_switch_and_delete(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway, enabled=True, dry_run=False)
+    season = hass.states.get("sensor.eg4_tou_active_profile").attributes["peak_edit"]["season"]
+    with pytest.raises(ServiceValidationError):                                         # the example is protected
+        await _call(hass, e, peaks={season: [["06:30", "09:30"]]})
+    await hass.services.async_call(DOMAIN, "save_tariff_as", {"name": "  Mine  ", "peaks": {season: [["06:30", "09:30"]]}}, blocking=True)
+    await hass.async_block_till_done()
+    lib, active = _lib(hass, e)
+    assert active == "Mine" and set(lib) == {tariffs.EXAMPLE_NAME, "Mine"} and not lib["Mine"].get("builtin")
+    assert lib[tariffs.EXAMPLE_NAME].get("peaks") is None                               # the example stayed pristine
+    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
+    assert a["peak_edit"]["tariff"] == "Mine" and a["peak_edit"]["overridden"] and a["peak_edit"]["peaks"] == [["06:30", "09:30"]]
+    assert hass.states.get("select.eg4_tou_tariff").state == "Mine"
+    if a["timeline"]["peaks"]:                                                          # weekday: holds follow the new peaks
+        assert gateway.regs[153] == pack_time("06:30")
+    await _call(hass, e, peaks={season: [["07:00", "10:00"]]})                          # a saved tariff is editable
+    assert _lib(hass, e)[0]["Mine"]["peaks"][season] == [["07:00", "10:00"]]
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "save_tariff_as", {"name": "Mine"}, blocking=True)   # name taken
+    await hass.services.async_call("select", "select_option", {"entity_id": "select.eg4_tou_tariff", "option": tariffs.EXAMPLE_NAME}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.eg4_tou_active_profile").attributes["peak_edit"]["builtin"] is True
+    await hass.services.async_call(DOMAIN, "set_tariff", {"name": "Mine"}, blocking=True)
+    await hass.async_block_till_done()
+    await _call(hass, e, peaks={season: None})                                          # reset to the tariff's own windows
+    assert not hass.states.get("sensor.eg4_tou_active_profile").attributes["peak_edit"]["overridden"]
+    await hass.services.async_call(DOMAIN, "delete_tariff", {"name": "Mine"}, blocking=True)   # deleting the active one
+    await hass.async_block_till_done()
+    lib, active = _lib(hass, e)
+    assert list(lib) == [tariffs.EXAMPLE_NAME] and active == tariffs.EXAMPLE_NAME
+
+
+async def test_upgraded_custom_entry_keeps_its_tariff_as_my_tariff(hass: HomeAssistant, gateway):
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    hass.config_entries.async_update_entry(e, data={**e.data, "tariff": "custom", "custom_tariff": CUSTOM})
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    lib, active = _lib(hass, e)
+    assert active == "My tariff" and tariffs.EXAMPLE_NAME in lib
+    assert hass.states.get("sensor.eg4_tou_active_profile").attributes["peak_edit"]["peaks"] == [["16:00", "20:00"]]
+
+
+async def test_configure_adds_a_named_tariff_and_can_go_back_to_the_example(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway)
+    f = hass.config_entries.options
+    r = await f.async_init(e.entry_id)
+    r = await f.async_configure(r["flow_id"], {"tariff": "single", "offpeak_weekends": True})
+    r = await f.async_configure(r["flow_id"], {"kind": "winter"})
+    r = await f.async_configure(r["flow_id"], {"start": "18:00:00", "end": "22:00:00", "add_another": False})
+    assert r["step_id"] == "name"
+    r = await f.async_configure(r["flow_id"], {"name": tariffs.EXAMPLE_NAME})            # protected name
+    assert r["errors"] == {"name": "tariff_builtin"}
+    r = await f.async_configure(r["flow_id"], {"name": "Plan B"})
+    assert r["type"] == "create_entry"
+    lib, active = _lib(hass, e)
+    assert active == "Plan B" and lib["Plan B"]["custom"]["peaks"] == {"winter": [["18:00", "22:00"]]}
+    r = await f.async_init(e.entry_id)
+    r = await f.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True, "offpeak_holidays": True})
+    assert r["type"] == "create_entry" and e.options["active_tariff"] == tariffs.EXAMPLE_NAME and "Plan B" in e.options["tariffs"]

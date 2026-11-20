@@ -6,7 +6,7 @@ custom_components/eg4_tou in a fresh config folder), then walks the new-user jou
 Docker container and prints a PASS/FAIL table. Nothing from your own working tree is used.
 
   uv run --with playwright python tools/clean_install_test.py                      # latest release, HA stable
-  uv run --with playwright python tools/clean_install_test.py --ref v0.11.0-dev.2 \
+  uv run --with playwright python tools/clean_install_test.py --ref v0.11.0-dev.3 \
         --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4                  # oldest supported HA
   uv run --with playwright python tools/clean_install_test.py --local                   # the working tree, before tagging
   python3 tools/clean_install_test.py --no-browser                                 # skip the dashboard checks
@@ -217,7 +217,7 @@ def wait_entities(ha: HA, timeout=240) -> dict:
     while time.time() < end:
         st = {k: v for k, v in ha.states().items() if k.split(".", 1)[1].startswith("eg4_tou_")}
         prof = st.get("sensor.eg4_tou_active_profile")
-        if len(st) >= 11 and prof and prof["state"] not in ("unavailable", "unknown"):
+        if len(st) >= 12 and prof and prof["state"] not in ("unavailable", "unknown"):
             return st
         time.sleep(5)
     return st
@@ -227,9 +227,10 @@ def check_entities(st: dict) -> None:
     want = ["sensor.eg4_tou_active_profile", "sensor.eg4_tou_registers_out_of_sync", "sensor.eg4_tou_controller_status",
             "switch.eg4_tou_controller_enabled", "switch.eg4_tou_read_only_mode", "number.eg4_tou_ac_charge_power",
             "number.eg4_tou_charge_limit_summer_weekday", "number.eg4_tou_charge_limit_winter_weekday",
-            "number.eg4_tou_charge_limit_weekend_holiday", "time.eg4_tou_charge_start", "time.eg4_tou_charge_end"]
+            "number.eg4_tou_charge_limit_weekend_holiday", "time.eg4_tou_charge_start", "time.eg4_tou_charge_end",
+            "select.eg4_tou_tariff"]
     miss = [e for e in want if e not in st]
-    record("all 11 entities exist with predictable ids", not miss, ", ".join(miss) or "ok")
+    record("all 12 entities exist with predictable ids", not miss, ", ".join(miss) or "ok")
     bad = [e for e in want if e in st and st[e]["state"] in ("unavailable",)]
     record("no entity is unavailable", not bad, ", ".join(bad))
     prof = st.get("sensor.eg4_tou_active_profile", {})
@@ -253,6 +254,19 @@ def check_update_service(ha: HA) -> None:
     record("update_settings refuses a charge window that ends before it starts", s >= 400 and start.startswith("01:00"),
            f"http {s}, charge start {start}")
     ha.call("POST", "/api/services/eg4_tou/update_settings", {"end_soc_offpeak": 50})
+    # tariff library: the built-in example is protected; a saved copy can be switched to and deleted
+    ex = ha.states().get("select.eg4_tou_tariff", {})
+    record("the built-in example tariff is selected and listed", ex.get("state", "").endswith("(example)"), str(ex.get("attributes", {}).get("options")))
+    s, _ = ha.call("POST", "/api/services/eg4_tou/update_settings", {"peaks": {"winter": [["06:00", "09:00"]]}})
+    record("the example tariff refuses edits", s >= 400, f"http {s}")
+    s, _ = ha.call("POST", "/api/services/eg4_tou/save_tariff_as", {"name": "Test copy", "peaks": {"winter": [["06:00", "09:00"]]}})
+    time.sleep(2)
+    now = ha.states().get("select.eg4_tou_tariff", {}).get("state")
+    record("save as new tariff creates it and makes it active", s == 200 and now == "Test copy", f"http {s}, active {now}")
+    s, _ = ha.call("POST", "/api/services/eg4_tou/delete_tariff", {"name": "Test copy"})
+    time.sleep(2)
+    back = ha.states().get("select.eg4_tou_tariff", {}).get("state", "")
+    record("deleting the active tariff falls back to the example", s == 200 and back.endswith("(example)"), f"http {s}, active {back}")
 
 
 def check_frontend(ha: HA, version: str) -> None:
@@ -338,7 +352,7 @@ def options_and_reload(ha: HA, entry_id: str) -> None:
     record("Configure saves a changed tariff", s == 200 and f2.get("type") == "create_entry", f"http {s} {str(f2)[:140]}")
     time.sleep(8)                                    # the entry reloads itself
     st = wait_entities(ha, 150)
-    record("the entry reloads after Configure and the entities come back", len(st) >= 11 and
+    record("the entry reloads after Configure and the entities come back", len(st) >= 12 and
            st.get("sensor.eg4_tou_active_profile", {}).get("state") not in (None, "unavailable"), f"{len(st)} entities")
 
 
@@ -392,7 +406,7 @@ def main() -> int:
                     sh("docker", "restart", container)
                     ha.wait_up()
                     st = wait_entities(ha, 240)
-                    record("after a Home Assistant restart the integration loads again", len(st) >= 11 and
+                    record("after a Home Assistant restart the integration loads again", len(st) >= 12 and
                            st.get("sensor.eg4_tou_active_profile", {}).get("state") not in (None, "unavailable"), f"{len(st)} entities")
                     # uninstall
                     s, _ = ha.call("DELETE", f"/api/config/config_entries/entry/{ctx['entry_id']}")

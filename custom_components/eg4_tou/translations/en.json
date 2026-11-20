@@ -189,6 +189,16 @@
           "end": "End of the on-peak window, in local time. Must be later than the start on the same day.",
           "add_another": "Tick if this season has a second on-peak window later in the day."
         }
+      },
+      "name": {
+        "title": "Name this tariff",
+        "description": "Give your tariff a name. It is saved in your tariff list, becomes the active tariff, and you can switch between tariffs at any time (the Tariff selector, or the Edit button on the timeline card). Using the name of a tariff you already made replaces it.",
+        "data": {
+          "name": "Tariff name"
+        },
+        "data_description": {
+          "name": "For example: Summer plan, Utility B, Vacation."
+        }
       }
     },
     "error": {
@@ -198,7 +208,9 @@
       "season_full_year": "Summer cannot cover the whole year. Use 'one schedule all year' instead.",
       "peak_order": "The peak must end after it starts, on the same day. Midnight-crossing peaks: split them into two windows.",
       "peak_overlap": "The two peak windows overlap.",
-      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day."
+      "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day.",
+      "tariff_name_invalid": "Enter a name of 1 to 40 characters.",
+      "tariff_builtin": "That name belongs to the built-in example tariff. Pick another name."
     }
   },
   "entity": {
@@ -252,6 +264,11 @@
       "charge_end": {
         "name": "Charge end"
       }
+    },
+    "select": {
+      "tariff": {
+        "name": "Tariff"
+      }
     }
   },
   "exceptions": {
@@ -275,6 +292,18 @@
     },
     "peak_overlap": {
       "message": "On-peak windows must not overlap."
+    },
+    "tariff_not_found": {
+      "message": "There is no tariff called {name}."
+    },
+    "tariff_name_invalid": {
+      "message": "A tariff name must be 1 to {max} characters."
+    },
+    "tariff_name_taken": {
+      "message": "A tariff called {name} already exists. Pick another name."
+    },
+    "tariff_builtin": {
+      "message": "{name} is the built-in example and cannot be changed or deleted. Save it as a new tariff first."
     }
   },
   "services": {
@@ -312,7 +341,53 @@
         },
         "peaks": {
           "name": "On-peak windows",
-          "description": "Per season, the on-peak windows as a list of [start, end] pairs (at most 2, not overlapping). Use null for a season to go back to the tariff's own windows."
+          "description": "Per season, the on-peak windows of the active tariff as a list of [start, end] pairs (at most 2, not overlapping). Use null for a season to go back to the tariff's own windows. Not allowed on the built-in example."
+        }
+      }
+    },
+    "set_tariff": {
+      "name": "Switch tariff",
+      "description": "Make a saved tariff the active one.",
+      "fields": {
+        "name": {
+          "name": "Tariff name",
+          "description": "The tariff's name."
+        },
+        "entry_id": {
+          "name": "Entry",
+          "description": "Only needed if more than one EG4 TOU Manager is set up."
+        }
+      }
+    },
+    "save_tariff_as": {
+      "name": "Save as new tariff",
+      "description": "Copy the active tariff (optionally with new on-peak windows) under a new name and switch to it. The active tariff itself is not changed.",
+      "fields": {
+        "name": {
+          "name": "New tariff name",
+          "description": "1 to 40 characters, not already used."
+        },
+        "peaks": {
+          "name": "On-peak windows",
+          "description": "Per season, the windows the new tariff should have."
+        },
+        "entry_id": {
+          "name": "Entry",
+          "description": "Only needed if more than one EG4 TOU Manager is set up."
+        }
+      }
+    },
+    "delete_tariff": {
+      "name": "Delete tariff",
+      "description": "Delete a saved tariff. The built-in example cannot be deleted. If it is the active one, the example becomes active.",
+      "fields": {
+        "name": {
+          "name": "Tariff name",
+          "description": "The tariff's name."
+        },
+        "entry_id": {
+          "name": "Entry",
+          "description": "Only needed if more than one EG4 TOU Manager is set up."
         }
       }
     }

@@ -6,7 +6,7 @@
 # three dots > Edit dashboard > three dots > Raw configuration editor, and paste this file.
 #
 # The tables find the integration's entities by themselves. The tiles and controls use the
-# default entity ids (sensor.eg4_tou_*, switch.eg4_tou_*, number.eg4_tou_*, time.eg4_tou_*).
+# default entity ids (sensor.eg4_tou_*, switch.eg4_tou_*, number.eg4_tou_*, time.eg4_tou_*, select.eg4_tou_*).
 # If yours differ (for example an older install that got an area prefix), find/replace them
 # in the raw editor.
 title: EG4 TOU
@@ -121,6 +121,8 @@ views:
                 name: Read-only mode (no writes)
               - entity: switch.eg4_tou_controller_enabled
                 name: Controller enabled (off = paused)
+              - entity: select.eg4_tou_tariff
+                name: Tariff in use
               - type: section
                 label: Charge limit (overnight charge stops at)
               - entity: number.eg4_tou_charge_limit_summer_weekday

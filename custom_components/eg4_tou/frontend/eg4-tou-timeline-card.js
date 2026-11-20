@@ -99,6 +99,7 @@ function renderTimeline(model, now, title, opts) {
   const edit = opts && opts.editable ? `<button class="btn edit" data-act="edit" title="Change the schedule settings">✎ Edit</button>` : "";
   return `<div class="card-body">` +
     (title || edit ? `<div class="titlebar"><div class="title">${esc(title || "")}</div>${edit}</div>` : "") +
+    (opts && opts.tariff ? `<div class="tariffline">Tariff: <b>${esc(opts.tariff)}</b></div>` : "") +
     lane("On-peak hours (your tariff)", "peak", peaks, null, now, false, h24) +
     lane("Hold windows (AC First)", "hold", (m.hold || {}).plan, (m.hold || {}).inverter, now, true, h24) +
     lane("Overnight charge", "charge", (m.charge || {}).plan, (m.charge || {}).inverter, now, true, h24) +
@@ -127,6 +128,7 @@ function draftFrom(settings, pe) {
   if (pe && Array.isArray(pe.peaks)) {
     d.peaks = winsOf(pe.peaks); d.def = winsOf(pe.default); d.season = pe.season; d.shift = Number(pe.shift_hours || 0);
     d.max = Number(pe.max_windows || 2); d.overridden = !!pe.overridden;
+    d.tariff = pe.tariff || ""; d.builtin = !!pe.builtin; d.tariffs = pe.tariffs || [];
   }
   return d;
 }
@@ -198,6 +200,18 @@ function slider(key, label, value, [lo, hi, step], unit, active) {
     `<output data-out="${key}">${value}${unit}</output></label>`;
 }
 
+/** The tariff picker row and the "name your tariff" row (shown when a new tariff is being created). */
+function tariffBar(d) {
+  if (!d.peaks) return "";
+  const opts = (d.tariffs || []).map((t) => `<option value="${esc(t.name)}"${t.name === d.tariff ? " selected" : ""}>${esc(t.name)}${t.builtin ? " (built-in)" : ""}</option>`).join("");
+  return `<div class="tbar"><label>Tariff <select data-el="tariffsel" aria-label="Active tariff">${opts}</select></label>` +
+    `<button class="btn small" data-act="saveas">Save as new tariff…</button>` +
+    (d.builtin ? "" : `<button class="btn small" data-act="deltariff">Delete</button>`) + `</div>` +
+    `<div class="namerow" data-el="namerow" hidden><div class="txt" data-el="nameinfo"></div>` +
+    `<input data-el="newname" maxlength="40" placeholder="Name, e.g. Summer plan" aria-label="New tariff name">` +
+    `<button class="btn small primary" data-act="createtariff">Create tariff</button> <button class="btn small" data-act="cancelname">Cancel</button></div>`;
+}
+
 /** Pure: the editor. draft/base as from draftFrom(); ctx = { model, now, h24, profile } */
 function renderEditor(draft, base, ctx) {
   const { model, now, h24, profile } = ctx;
@@ -218,6 +232,7 @@ function renderEditor(draft, base, ctx) {
   return `<div class="card-body editing">` +
     `<div class="titlebar"><div class="title">Edit schedule</div>` +
     `<span><button class="btn" data-act="cancel">Cancel</button> <button class="btn primary" data-act="save"${dirty ? "" : " disabled"}>Save</button></span></div>` +
+    tariffBar(draft) +
     peakLane +
     `<div class="lane"><div class="head"><span class="name">Overnight charge window</span><span class="st" data-el="dur"></span></div>` +
     `<div class="track edit" data-el="track-c"><i class="now" style="left:${pct(now).toFixed(2)}%"></i>${winParts("c", "charge", "Charge")}</div>` +
@@ -275,6 +290,14 @@ const STYLE = `
   .btn { font: inherit; font-size: 0.85em; padding: 5px 12px; border-radius: 16px; cursor: pointer; border: 1px solid var(--divider-color, #888);
     background: transparent; color: var(--primary-text-color); }
   .btn.primary { background: var(--primary-color, #03a9f4); border-color: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); }
+  .tariffline { font-size: 0.82em; color: var(--secondary-text-color); margin: -2px 0 8px; }
+  .tbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 0.88em; }
+  .tbar select { font: inherit; padding: 4px 6px; border-radius: 6px; max-width: 220px; background: var(--card-background-color, #fff);
+    color: var(--primary-text-color); border: 1px solid var(--divider-color, #888); }
+  .namerow { margin: 0 0 10px; padding: 8px; border-radius: 8px; background: var(--secondary-background-color, rgba(127,127,127,.12)); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .namerow[hidden] { display: none; } .namerow .txt { flex-basis: 100%; margin: 0; }
+  .namerow input { font: inherit; padding: 5px 8px; border-radius: 6px; flex: 1 1 140px; min-width: 0; border: 1px solid var(--divider-color, #888);
+    background: var(--card-background-color, #fff); color: var(--primary-text-color); }
   .btn.small { font-size: 0.78em; padding: 3px 9px; }
   .prow { font-size: 0.8em; color: var(--secondary-text-color); margin-top: 3px; display: flex; gap: 8px; align-items: center; }
   .btn[disabled] { opacity: .45; cursor: default; }
@@ -309,6 +332,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
         this._b = this.shadowRoot.getElementById("b");
         this._b.addEventListener("click", (e) => this._click(e));
         this._b.addEventListener("input", (e) => this._input(e));
+        this._b.addEventListener("change", (e) => this._change(e));
         this._b.addEventListener("pointerdown", (e) => this._pointerDown(e));
         this._b.addEventListener("keydown", (e) => this._key(e));
       }
@@ -350,7 +374,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
       this._last = key;
       const tl = st.attributes.timeline;
       const title = this._config.title === undefined ? `Today's schedule (${st.state} profile)` : this._config.title;
-      this._b.innerHTML = tl ? (this._saved ? `<div class="banner">${esc(this._saved)}</div>` : "") + renderTimeline(tl, now, title, { h24, editable: this._canEdit(st) })
+      this._b.innerHTML = tl ? (this._saved ? `<div class="banner">${esc(this._saved)}</div>` : "") + renderTimeline(tl, now, title, { h24, editable: this._canEdit(st), tariff: (st.attributes.peak_edit || {}).tariff })
         : `<div class="msg">The Active profile sensor has no timeline data. Update EG4 Local TOU Manager to v0.5.0 or newer and restart Home Assistant.</div>`;
     }
 
@@ -420,6 +444,10 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
       if (a === "edit") { const st = this._find(); if (st) this._startEdit(st); }
       else if (a === "cancel") { this._edit = null; this._last = null; this._render(true); }
       else if (a === "save") this._save();
+      else if (ed && a === "saveas") this._nameRow("Save these hours as a new tariff. The current one stays as it is.");
+      else if (ed && a === "cancelname") this._el("namerow").hidden = true;
+      else if (ed && a === "createtariff") this._createTariff();
+      else if (ed && a === "deltariff") this._deleteTariff();
       else if (ed && ed.draft.peaks && a === "addpeak") {
         const w = newPeak(ed.draft.peaks);
         if (w) { ed.draft.peaks = [...ed.draft.peaks, w].sort((x, y) => x.start - y.start); this._sync(); }
@@ -428,6 +456,53 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
       } else if (ed && ed.draft.peaks && a === "resetpeaks") {
         ed.draft.peaks = ed.draft.def.map((w) => ({ ...w })); this._sync();
       }
+    }
+    _nameRow(info) {
+      const row = this._el("namerow"); if (!row) return;
+      this._el("nameinfo").textContent = info; row.hidden = false;
+      const inp = this._el("newname"); inp.focus();
+    }
+    async _call(service, data) {
+      const st = this._edit.st;
+      await this._hass.callService("eg4_tou", service, { entry_id: st.attributes.entry_id, ...data });
+    }
+    /** Run a service from the editor; on failure show the reason, on success leave edit mode with a banner. */
+    async _run(text, fn, done) {
+      const e = this._edit; if (!e || e.busy) return;
+      e.busy = true; this._sync(); this._msg(text);
+      try { await fn(); } catch (err) {
+        e.busy = false; this._sync(); this._msg((err && err.message) || "That did not work. Nothing was changed.", "err"); return;
+      }
+      this._finish(done);
+    }
+    _finish(text) {
+      this._saved = text; this._edit = null; this._last = null; this._render(true);
+      clearTimeout(this._savedTimer);
+      this._savedTimer = setTimeout(() => { this._saved = ""; this._last = null; this._render(true); }, 12000);
+    }
+    _change(e) {
+      if (!this._edit || !e.target.getAttribute || e.target.getAttribute("data-el") !== "tariffsel") return;
+      const name = e.target.value, ed = this._edit;
+      if (name === ed.draft.tariff) return;
+      if (Object.keys(changes(ed.draft, ed.base)).length && typeof confirm === "function" && !confirm("Discard your unsaved changes and switch tariff?")) {
+        e.target.value = ed.draft.tariff; return;
+      }
+      this._run("Switching…", () => this._call("set_tariff", { name }), `Switched to the “${name}” tariff.`);
+    }
+    _createTariff() {
+      const e = this._edit, name = (this._el("newname").value || "").trim();
+      if (!name) { this._msg("Type a name for the new tariff.", "err"); return; }
+      const patch = changes(e.draft, e.base), peaks = patch.peaks ? patch.peaks : { [e.draft.season]: winStrs(e.draft.peaks) };
+      const rest = { ...patch }; delete rest.peaks;
+      this._run("Creating…", async () => {
+        await this._call("save_tariff_as", { name, peaks });
+        if (Object.keys(rest).length) await this._call("update_settings", rest);
+      }, `Saved as the new “${name}” tariff, now active. “${e.draft.tariff}” is unchanged.`);
+    }
+    _deleteTariff() {
+      const e = this._edit, name = e.draft.tariff;
+      if (typeof confirm === "function" && !confirm(`Delete the “${name}” tariff? The built-in example becomes active.`)) return;
+      this._run("Deleting…", () => this._call("delete_tariff", { name }), `Deleted the “${name}” tariff.`);
     }
     _input(e) {
       const k = e.target.getAttribute && e.target.getAttribute("data-key");
@@ -475,21 +550,15 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
     async _save() {
       const e = this._edit, patch = changes(e.draft, e.base);
       if (!Object.keys(patch).length || e.busy) return;
-      e.busy = true; this._sync(); this._msg("Saving…");
-      try {
-        await this._hass.callService("eg4_tou", "update_settings", { entry_id: e.st.attributes.entry_id, ...patch });
-      } catch (err) {
-        e.busy = false; this._sync();
-        this._msg((err && err.message) || "Could not save. Nothing was changed.", "err");
+      if (patch.peaks && e.draft.builtin) {   // the shipped example is never changed: name a copy instead
+        this._nameRow("The built-in example tariff cannot be changed. Give your hours a name to save them as your own tariff.");
         return;
       }
       const mode = (e.st.attributes.facts || {}).mode;
-      this._saved = mode === "live" ? "Saved. The inverter is updated within a few seconds."
+      const note = mode === "live" ? "Saved. The inverter is updated within a few seconds."
         : mode === "read_only" ? "Saved. Read-only mode is on, so the plan changed but nothing was written to the inverter."
         : "Saved. The controller is paused, so nothing is written to the inverter.";
-      this._edit = null; this._last = null; this._render(true);
-      clearTimeout(this._savedTimer);
-      this._savedTimer = setTimeout(() => { this._saved = ""; this._last = null; this._render(true); }, 12000);
+      this._run("Saving…", () => this._call("update_settings", patch), note);
     }
   }
   customElements.define("eg4-tou-timeline-card", Eg4TouTimelineCard);

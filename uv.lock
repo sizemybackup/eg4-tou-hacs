@@ -4,5 +4,5 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "eg4-tou-hacs"
-version = "0.11.0.dev2"
+version = "0.11.0.dev3"
 source = { virtual = "." }

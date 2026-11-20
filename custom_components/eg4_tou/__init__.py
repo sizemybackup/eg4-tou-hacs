@@ -11,6 +11,7 @@ from homeassistant.helpers import config_validation as cv
 from .coordinator import TouCoordinator
 from .const import CONF_CREATE_DASHBOARD, CONF_DASHBOARD_URL, DEFAULT_OPTIONS, DOMAIN, PLATFORMS
 from . import services
+from .tariffs import initial_library
 from .dashboard import CREATED, UNAVAILABLE, URL_PATH, async_create_dashboard, async_remove_dashboard
 
 # Set up from the UI only; any `eg4_tou:` key in configuration.yaml is rejected with a clear message.
@@ -41,7 +42,7 @@ async def async_setup(hass: "HomeAssistant", config: "ConfigType") -> bool:
 
 
 async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
-    missing = {k: v for k, v in DEFAULT_OPTIONS.items() if k not in entry.options}
+    missing = {k: v for k, v in {**DEFAULT_OPTIONS, **initial_library(entry.data)}.items() if k not in entry.options}
     if missing:
         hass.config_entries.async_update_entry(entry, options={**entry.options, **missing})
     coordinator = TouCoordinator(hass, entry)

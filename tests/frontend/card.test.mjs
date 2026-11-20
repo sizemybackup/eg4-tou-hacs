@@ -203,3 +203,16 @@ test("stacked handles of touching windows are told apart by drag direction", () 
   assert.equal(T.touching([{ start: 420, end: 660 }, { start: 1020, end: 1260 }], "p0", "end"), null);
   assert.equal(T.touching(peaks, "c", "end"), null); assert.equal(T.touching(null, "p0", "end"), null);
 });
+
+test("editor offers the tariff picker; the built-in example has no Delete; view mode names the tariff", () => {
+  const mk = (builtin) => T.draftFrom(settings, { ...pe, tariff: builtin ? "BGE (example)" : "Mine", builtin,
+    tariffs: [{ name: "BGE (example)", builtin: true }, { name: "Mine", builtin: false }] });
+  const ex = mk(true), mine = mk(false);
+  const h1 = T.renderEditor(ex, ex, { model, now: 600, h24: true, profile: "winter" });
+  assert.match(h1, /<option value="BGE \(example\)" selected>BGE \(example\) \(built-in\)/); assert.match(h1, /data-act="saveas"/);
+  assert.ok(!h1.includes('data-act="deltariff"')); assert.match(h1, /data-el="namerow" hidden/);
+  const h2 = T.renderEditor(mine, mine, { model, now: 600, h24: true, profile: "winter" });
+  assert.match(h2, /data-act="deltariff"/); assert.match(h2, /<option value="Mine" selected>/);
+  assert.match(T.renderTimeline(model, 0, "T", { tariff: "Mine <b>" }), /Tariff: <b>Mine &lt;b&gt;<\/b>/);   // escaped
+  assert.ok(!T.renderTimeline(model, 0, "T").includes("Tariff:"));
+});

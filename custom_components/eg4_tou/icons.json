@@ -50,11 +50,25 @@
       "charge_end": {
         "default": "mdi:clock-end"
       }
+    },
+    "select": {
+      "tariff": {
+        "default": "mdi:cash-clock"
+      }
     }
   },
   "services": {
     "update_settings": {
       "service": "mdi:calendar-edit"
+    },
+    "set_tariff": {
+      "service": "mdi:swap-horizontal"
+    },
+    "save_tariff_as": {
+      "service": "mdi:content-save-plus"
+    },
+    "delete_tariff": {
+      "service": "mdi:delete"
     }
   }
 }

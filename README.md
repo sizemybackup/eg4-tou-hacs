@@ -61,13 +61,27 @@ or use the arrow keys on a focused handle). Windows cannot cross each other; **+
 window (the inverter supports two) and **Remove** deletes one. The **hold windows** (AC First) update live as you drag,
 because they are simply the rest of the day. Open **Charge limits** and **AC charge power** for the sliders, and press
 **Save**. Everything you changed is applied in one step (the `eg4_tou.update_settings` action), so the inverter never
-sees half a schedule. **Cancel** throws the edit away, and **Reset to tariff** puts your tariff's own peak hours back.
+sees half a schedule. **Cancel** throws the edit away, and **Reset to tariff** puts the tariff's own peak hours back.
 The card warns if the charge window overlaps an on-peak period.
 
-On-peak edits are stored as your own hours for the current **season** (every weekday of it; weekends and
-holidays stay all off-peak) and sit on top of your tariff, so the BGE holiday list and its daylight-saving shift
-still apply (during the shift weeks the card tells you the tariff moves your hours an hour later). Running
-**Configure** and choosing a tariff again clears them. In read-only mode a save changes the plan only; nothing is
+### Tariffs: an example, and your own named ones
+
+The integration ships with one tariff, **BGE Schedule RL (example)**, which is read-only. Everyone else
+creates their own, and you can keep several and switch between them (a summer plan, a second utility, a
+trial):
+
+* **Configure** (the button on the integration page): define a tariff (seasons and on-peak windows) and **name** it.
+  It joins your list and becomes the active one. Using the name of a tariff you already made replaces it.
+* **Edit on the timeline card**: change the on-peak windows of the active tariff and Save. On the built-in
+  example the card asks you to **name your hours** instead, and saves them as a new tariff (the example stays
+  as it was). **Save as new tariff…** copies the active tariff under a new name at any time.
+* **Switch** with the *Tariff in use* selector (`select.eg4_tou_tariff`, also on the dashboard and usable in
+  automations) or the Tariff picker in the card's Edit mode. **Delete** removes a tariff you made.
+
+On-peak edits apply to the current **season** (every weekday of it; weekends and holidays stay all off-peak).
+A tariff made from the example keeps its holiday list and daylight-saving shift (during the shift weeks the
+card tells you the hours move an hour later). The charge window, charge limits and AC power are settings of the
+integration and are the same for every tariff. In read-only mode a save changes the plan only; nothing is
 written to the inverter.
 
 To add it by hand instead (you unticked the box, or Home Assistant could not create it and told you so): Settings,
@@ -167,7 +181,7 @@ A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manag
 
 ### Settings you can change later
 
-* **Configure** button: the tariff (preset or custom peak windows, weekends, holidays).
+* **Configure** button: add a named tariff (the example, or custom seasons and peak windows, weekends, holidays) and switch to it.
 * **Reconfigure** (three-dot menu): gateway address, port, unit id, holiday country/state.
 * Entities on the device page (also on the dashboard):
 
@@ -175,11 +189,13 @@ A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manag
 |---|---|
 | `switch.eg4_tou_controller_enabled` | Master switch. Off: nothing is planned or written. |
 | `switch.eg4_tou_read_only_mode` | On: plan only, never write. Off: write differences to the inverter. |
+| `select.eg4_tou_tariff` | Which saved tariff is in use. |
 | `number.eg4_tou_charge_limit_summer_weekday` | AC charge end SOC on summer weekdays (20-100%). |
 | `number.eg4_tou_charge_limit_winter_weekday` | AC charge end SOC on winter weekdays (20-100%). |
 | `number.eg4_tou_charge_limit_weekend_holiday` | AC charge end SOC on weekends and holidays (20-100%). |
 | `number.eg4_tou_ac_charge_power` | AC charge power while grid charging (1-10 kW). |
 | `time.eg4_tou_charge_start`, `time.eg4_tou_charge_end` | The overnight AC charge window. |
+| actions `eg4_tou.set_tariff`, `save_tariff_as`, `delete_tariff` | Switch to a saved tariff by name, copy the active one (optionally with new on-peak windows) under a new name, delete one you made. Administrators only. |
 | action `eg4_tou.update_settings` | Change the on-peak windows, the charge window, the three charge limits and the AC charge power in one call (what the timeline card's Save uses). Administrators only; the window must end after it starts. |
 | `sensor.eg4_tou_active_profile` | Today's profile: summer weekday, winter weekday or weekend / holiday. Attributes hold the plan, the timeline and the week ahead for the cards. |
 | `sensor.eg4_tou_controller_status` | Off, read-only or live (writing); `last_write` attribute shows the last write and any error. |

@@ -19,8 +19,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
 from .const import (CONF_COUNTRY, CONF_CREATE_DASHBOARD, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
-                    DOMAIN, OPT_DRY_RUN, OPT_ENABLED, OPT_PEAKS)
+                    DOMAIN, OPT_DRY_RUN, OPT_ENABLED)
+from . import tariffs
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
+from homeassistant.exceptions import ServiceValidationError
 from .scanner import Found, async_scan, is_local_address
 from .planner import MAX_PEAKS_PER_DAY, PRESETS, tariff_from_custom, validate_peaks, winter_dates
 
@@ -376,10 +378,20 @@ class Eg4TouOptionsFlow(_TariffSteps, config_entries.OptionsFlow):
         return await self._begin_tariff()
 
     async def _tariff_done(self, key: str, custom: dict[str, Any] | None) -> ConfigFlowResult:
-        data = {k: v for k, v in self.config_entry.data.items() if k != CONF_CUSTOM}
-        data[CONF_TARIFF] = key
-        if custom:
-            data[CONF_CUSTOM] = custom
-        self.hass.config_entries.async_update_entry(self.config_entry, data=data)
-        self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
-        return self.async_create_entry(data={**self.config_entry.options, OPT_PEAKS: {}})  # a new tariff drops card-made peak edits
+        if custom is None:   # the ready-made example: just switch to it
+            return self.async_create_entry(data=tariffs.activate(dict(self.config_entry.options), tariffs.EXAMPLE_NAME))
+        self._new_custom = custom
+        return await self.async_step_name()
+
+    async def async_step_name(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Name the tariff just entered; it joins the library and becomes the active one."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                new = tariffs.add_custom(dict(self.config_entry.options), user_input["name"], self._new_custom)
+            except ServiceValidationError as exc:
+                errors["name"] = str(exc.translation_key)
+            else:
+                return self.async_create_entry(data=new)
+        schema = vol.Schema({vol.Required("name", default=(user_input or {}).get("name", tariffs.DEFAULT_CUSTOM_NAME)): str})
+        return _show(self, "name", schema, errors)

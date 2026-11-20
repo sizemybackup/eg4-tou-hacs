@@ -43,3 +43,42 @@ update_settings:
       example: '{"winter": [["07:00", "11:00"], ["17:00", "21:00"]]}'
       selector:
         object:
+set_tariff:
+  fields:
+    name:
+      required: true
+      example: "Summer plan"
+      selector:
+        text:
+    entry_id:
+      advanced: true
+      selector:
+        config_entry:
+          integration: eg4_tou
+save_tariff_as:
+  fields:
+    name:
+      required: true
+      example: "Utility B"
+      selector:
+        text:
+    peaks:
+      advanced: true
+      selector:
+        object:
+    entry_id:
+      advanced: true
+      selector:
+        config_entry:
+          integration: eg4_tou
+delete_tariff:
+  fields:
+    name:
+      required: true
+      selector:
+        text:
+    entry_id:
+      advanced: true
+      selector:
+        config_entry:
+          integration: eg4_tou
