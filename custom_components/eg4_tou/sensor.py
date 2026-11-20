@@ -5,6 +5,7 @@ from homeassistant.components.sensor import SensorEntity
 from .base import TouEntity
 from .planner import rules_table, timeline
 from .const import DOMAIN
+from .modbus import WRITE_LIMITS
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -14,6 +15,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class ProfileSensor(TouEntity, SensorEntity):
     _domain = "sensor"
+    # These feed the dashboard cards from the live state only. Recording them would store several KB
+    # in the history database on every update, and the recorder drops attributes over 16 KB anyway.
+    # peak_windows stays recorded: it is short and useful in history.
+    _unrecorded_attributes = frozenset(
+        {"rules", "timeline", "week", "facts", *(f"reg_{r}" for r in WRITE_LIMITS)})
+
     def __init__(self, c):
         super().__init__(c, "profile", "Active profile")
 

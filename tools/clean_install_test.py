@@ -6,7 +6,7 @@ custom_components/eg4_tou in a fresh config folder), then walks the new-user jou
 Docker container and prints a PASS/FAIL table. Nothing from your own working tree is used.
 
   uv run --with playwright python tools/clean_install_test.py                      # latest release, HA stable
-  uv run --with playwright python tools/clean_install_test.py --ref v0.7.3 \
+  uv run --with playwright python tools/clean_install_test.py --ref v0.7.4 \
         --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4                  # oldest supported HA
   python3 tools/clean_install_test.py --no-browser                                 # skip the dashboard checks
 

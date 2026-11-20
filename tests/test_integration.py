@@ -411,3 +411,19 @@ async def test_write_switches_are_config_entities_not_voice_exposed(hass: HomeAs
     reg = er.async_get(hass)
     for eid in ("switch.eg4_tou_read_only_mode", "switch.eg4_tou_controller_enabled"):
         assert reg.async_get(eid).entity_category is EntityCategory.CONFIG, eid
+
+
+async def test_large_profile_attributes_are_not_recorded(hass: HomeAssistant, gateway):
+    """The card data (rules, timeline, week, ...) must not bloat the recorder; only peak_windows is kept."""
+    import json
+    from custom_components.eg4_tou.sensor import ProfileSensor
+
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    attrs = hass.states.get("sensor.eg4_tou_active_profile").attributes
+    recorded = set(attrs) - ProfileSensor._unrecorded_attributes
+    assert recorded <= {"peak_windows", "friendly_name", "icon"}, recorded
+    size = len(json.dumps({k: attrs[k] for k in ProfileSensor._unrecorded_attributes if k in attrs}, default=str))
+    print(f"unrecorded attribute payload: {size} bytes")
