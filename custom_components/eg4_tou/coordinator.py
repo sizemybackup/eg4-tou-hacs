@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import timedelta
+from collections.abc import Mapping
+from datetime import date, timedelta
+from typing import Any
 
 import holidays
 from homeassistant.config_entries import ConfigEntry
@@ -21,6 +23,8 @@ from .modbus import Eg4Modbus, ModbusConfig, ModbusError, WriteRefused, unpack_t
 from .planner import PRESETS, Plan, Settings, build_plan, tariff_from_custom, week_schedule
 
 _LOGGER = logging.getLogger(__name__)
+
+type TouConfigEntry = ConfigEntry[TouCoordinator]
 READ_BLOCKS = ((66, 8), (152, 6), (160, 2))  # 66..73, 152..157, 160..161
 
 
@@ -32,13 +36,13 @@ class TouData:
     mode: str                      # "off" | "read_only" | "live"
     last_write: str = "never"
     peaks: str = ""
-    peak_list: list = field(default_factory=list)
-    week: list = field(default_factory=list)
-    facts: dict = field(default_factory=dict)
-    extra: dict = field(default_factory=dict)
+    peak_list: list[list[str]] = field(default_factory=list)
+    week: list[dict[str, Any]] = field(default_factory=list)
+    facts: dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
-def settings_from_options(o) -> Settings:
+def settings_from_options(o: Mapping[str, Any]) -> Settings:
     return Settings(
         charge_window=(o[OPT_CHARGE_START], o[OPT_CHARGE_END]),
         end_soc={"summer": int(o[OPT_END_SOC_SUMMER]), "winter": int(o[OPT_END_SOC_WINTER]),
@@ -48,23 +52,25 @@ def settings_from_options(o) -> Settings:
 
 
 class TouCoordinator(DataUpdateCoordinator[TouData]):
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: TouConfigEntry) -> None:
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN,
                          update_interval=timedelta(minutes=SCAN_INTERVAL_MIN))
         self.entry = entry
         d = entry.data
         self.client = Eg4Modbus(ModbusConfig(d[CONF_HOST], d.get(CONF_PORT, 502), d.get(CONF_UNIT, 1)))
         self.tariff = tariff_from_custom(d[CONF_CUSTOM]) if d[CONF_TARIFF] == "custom" else PRESETS[d[CONF_TARIFF]]
-        self._holidays = None  # built off the event loop in async_load_holidays()
+        self._holidays: holidays.HolidayBase | None = None  # built off the event loop in async_load_holidays()
         self._last_write = "never"
 
     async def async_load_holidays(self) -> None:
         """The holidays library imports country modules lazily, which blocks; do it in a worker thread."""
         d = self.entry.data
-        self._holidays = await self.hass.async_add_executor_job(
-            lambda: holidays.country_holidays(d[CONF_COUNTRY], subdiv=d.get(CONF_SUBDIV) or None))
+        def build() -> holidays.HolidayBase:
+            return holidays.country_holidays(d[CONF_COUNTRY], subdiv=d.get(CONF_SUBDIV) or None)
 
-    def _day_info(self, day):
+        self._holidays = await self.hass.async_add_executor_job(build)
+
+    def _day_info(self, day: date) -> tuple[bool, str]:
         """(is this an all-off-peak day, label). Weekends, plus holidays from the tariff's own
         rule when it has one (BGE does), else from the country/state calendar if enabled."""
         t = self.tariff
@@ -96,7 +102,8 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         try:
             current = await self._read_all()
         except ModbusError as exc:
-            raise UpdateFailed(f"inverter read failed: {exc}") from exc
+            raise UpdateFailed(translation_domain=DOMAIN, translation_key="read_failed",
+                               translation_placeholders={"error": str(exc)}) from exc
 
         today = dt_util.now().date()
         offpeak, _ = self._day_info(today)
@@ -120,8 +127,8 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         week = week_schedule(today, self.tariff, settings, self._day_info)
         return TouData(current, plan, pending, mode, self._last_write, peaks, peak_list, week, facts)
 
-    async def _apply(self, pending) -> str:
-        done = []
+    async def _apply(self, pending: list[tuple[int, int, int | None]]) -> str:
+        done: list[int] = []
         for reg, want, was in pending:
             try:
                 await self.client.write(reg, want)

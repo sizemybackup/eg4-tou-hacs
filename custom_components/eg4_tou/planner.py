@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Callable
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 from dateutil.easter import easter
 
@@ -167,7 +168,7 @@ def next_day(day: date) -> date:
 
 # ---- Rules table (for dashboards) ---------------------------------------
 
-def _window_list(regs: dict[int, int | None], first_reg: int, count: int = 3) -> list[list[str]] | None:
+def _window_list(regs: Mapping[int, int | None], first_reg: int, count: int = 3) -> list[list[str]] | None:
     """[["HH:MM","HH:MM"], ...] from consecutive start/end registers; None if unread.
     A 00:00-00:00 pair is an unused slot and is skipped."""
     out = []
@@ -181,14 +182,14 @@ def _window_list(regs: dict[int, int | None], first_reg: int, count: int = 3) ->
     return out
 
 
-def _windows(regs: dict[int, int | None], first_reg: int, count: int = 3) -> str | None:
+def _windows(regs: Mapping[int, int | None], first_reg: int, count: int = 3) -> str | None:
     wl = _window_list(regs, first_reg, count)
     if wl is None:
         return None
     return ", ".join(f"{a}-{b}" for a, b in wl) or "none"
 
 
-def timeline(plan: Plan, current: dict[int, int], peaks: tuple[tuple[str, str], ...] | list) -> dict:
+def timeline(plan: Plan, current: Mapping[int, int], peaks: Sequence[Sequence[str]]) -> dict[str, Any]:
     """Structured windows for the 24-hour timeline card: the plan and what the inverter holds now."""
     return {
         "peaks": [list(p) for p in peaks],
@@ -197,36 +198,38 @@ def timeline(plan: Plan, current: dict[int, int], peaks: tuple[tuple[str, str], 
     }
 
 
-def rules_table(plan: Plan, current: dict[int, int], peaks_text: str) -> list[dict]:
+def rules_table(plan: Plan, current: Mapping[int, int], peaks_text: str) -> list[dict[str, Any]]:
     """Rows for a dashboard: what the plan wants vs what the inverter holds now."""
-    def pct(regs):
+    def pct(regs: Mapping[int, int]) -> str | None:
         lo, hi = regs.get(160), regs.get(161)
         return None if lo is None or hi is None else f"{lo}% to {hi}%"
 
-    def kw(regs):
+    def kw(regs: Mapping[int, int]) -> str | None:
         v = regs.get(POWER_REG)
         return None if v is None else f"{v / 10:g} kW"
 
-    rows = [{"rule": "On-peak hours (your tariff)", "plan": peaks_text or "none", "now": "n/a", "in_sync": None}]
-    for label, fn in (
+    rows: list[dict[str, Any]] = [{"rule": "On-peak hours (your tariff)", "plan": peaks_text or "none", "now": "n/a", "in_sync": None}]
+    rules: tuple[tuple[str, Callable[[Mapping[int, int]], str | None]], ...] = (
         ("Hold windows (AC First)", lambda r: _windows(r, 152)),
         ("Overnight charge window", lambda r: _windows(r, 68)),
         ("Charge starts below / stops at", pct),
         ("AC charge power", kw),
-    ):
+    )
+    for label, fn in rules:
         want, have = fn(plan.registers), fn(current)
         rows.append({"rule": label, "plan": want, "now": have if have is not None else "unknown",
                      "in_sync": want == have})
     return rows
 
 
-def week_schedule(start: date, tariff: Tariff, settings: Settings, day_info, days: int = 8) -> list[dict]:
+def week_schedule(start: date, tariff: Tariff, settings: Settings,
+                  day_info: Callable[[date], tuple[bool, str]], days: int = 8) -> list[dict[str, Any]]:
     """The next `days` days of schedule, for cards that count down to the next event.
 
     day_info(day) -> (offpeak_day: bool, day_type_label: str). Hold and charge windows are the
     PLAN for that day (the card substitutes the inverter's own windows for today).
     """
-    out = []
+    out: list[dict[str, Any]] = []
     for i in range(days):
         d = start + timedelta(days=i)
         offpeak, label = day_info(d)
@@ -259,7 +262,8 @@ def validate_peaks(peaks: list[tuple[str, str]]) -> str | None:
     return None
 
 
-def winter_dates(summer_start: tuple[int, int], summer_end: tuple[int, int]):
+def winter_dates(summer_start: tuple[int, int], summer_end: tuple[int, int]
+                 ) -> tuple[tuple[int, int], tuple[int, int]] | None:
     """The rest of the year: from the day after summer ends to the day before
     it starts. Returns None if summer would cover the whole year."""
     a = date(2024, *summer_start)  # leap year so Feb 29 is a valid input
@@ -270,7 +274,7 @@ def winter_dates(summer_start: tuple[int, int], summer_end: tuple[int, int]):
     return (w_start.month, w_start.day), (w_end.month, w_end.day)
 
 
-def tariff_from_custom(c: dict) -> Tariff:
+def tariff_from_custom(c: Mapping[str, Any]) -> Tariff:
     """Build a Tariff from the dict the setup flow stores.
 
     {"seasons": {"summer": {"start": [6,1], "end": [9,30]}, "winter": {...}},

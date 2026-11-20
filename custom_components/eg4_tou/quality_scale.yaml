@@ -1,0 +1,113 @@
+# Self-assessment against the Home Assistant integration quality scale
+# (https://contributors.home-assistant.io/core/quality-scale/).
+#
+# This is a custom (HACS) integration. Official tiers are only awarded to integrations in Home
+# Assistant core, and hassfest does not check this file for custom integrations. Nothing here has
+# been reviewed by the Home Assistant team. The CI runs the tests (coverage), strict mypy and hassfest.
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: The integration registers no actions (services).
+  appropriate-polling: done  # every 10 minutes; schedules change at most a few times a day
+  brands:
+    status: done
+    comment: >-
+      Icon and logo ship in custom_components/eg4_tou/brand/ (custom integrations' local brand
+      images); not submitted to the home-assistant/brands repository.
+  common-modules: done  # coordinator.py, entity.py
+  config-flow-test-coverage: done
+  config-flow: done  # every field has a data_description; read-only probe before the entry is created
+  dependency-transparency:
+    status: done
+    comment: >-
+      The only requirement, holidays, is open source on PyPI. The Modbus client is part of this
+      integration (modbus.py), not a separate library; core would require it on PyPI.
+  docs-actions:
+    status: exempt
+    comment: No actions.
+  docs-conditions:
+    status: exempt
+    comment: No device conditions.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  docs-triggers:
+    status: exempt
+    comment: No device triggers.
+  entity-event-setup:
+    status: exempt
+    comment: Entities do not subscribe to events; all data comes from the coordinator.
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done  # first refresh raises ConfigEntryNotReady when the inverter cannot be read
+  unique-config-entry: done  # unique id = gateway host:port:unit
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: >-
+      No actions are registered. The entity controls (switch, number, time) only store settings in
+      the config entry and cannot fail.
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable: done  # CoordinatorEntity: unavailable when the last read failed
+  integration-owner: done
+  log-when-unavailable: done  # DataUpdateCoordinator logs the failure once and the recovery once
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: Modbus TCP has no credentials.
+  test-coverage: done  # every module above 95%
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery:
+    status: exempt
+    comment: >-
+      Generic RS485-to-Ethernet gateways do not announce themselves over zeroconf, SSDP or DHCP in a
+      way that identifies an EG4 behind them. Instead the setup form scans the local /24 read-only
+      and pre-fills any gateway it finds.
+  discovery-update-info:
+    status: exempt
+    comment: No discovery (see above); Reconfigure changes the address.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: One config entry is one inverter; its single device exists from setup.
+  entity-category: done  # settings are CONFIG, the out-of-sync counter is DIAGNOSTIC
+  entity-device-class: done  # ENUM for profile and status; no other device class fits
+  entity-disabled-by-default:
+    status: exempt
+    comment: >-
+      Every entity is used by the bundled dashboard and cards; there are no rarely used entities to
+      disable.
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues:
+    status: exempt
+    comment: >-
+      There are no user-fixable problems beyond the connection (handled by unavailability and the
+      log) and write errors (shown on the Controller status sensor).
+  stale-devices:
+    status: exempt
+    comment: The single device is removed with its config entry.
+
+  # Platinum
+  async-dependency: done  # the Modbus client is asyncio-native; holidays is loaded in the executor
+  inject-websession:
+    status: exempt
+    comment: No HTTP; the integration speaks Modbus TCP.
+  strict-typing: done  # mypy --strict passes in CI

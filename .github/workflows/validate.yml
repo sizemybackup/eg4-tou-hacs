@@ -36,10 +36,16 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-      - name: Python tests
+      - name: Python tests (coverage must stay above 95%, see quality_scale.yaml)
         run: >
           uv run --python 3.14 --no-project
           --with pytest-homeassistant-custom-component --with holidays --with home-assistant-frontend
-          python -I -m pytest -q
+          --with pytest-cov
+          python -I -m pytest -q --cov=custom_components/eg4_tou --cov-report=term-missing --cov-fail-under=95
+      - name: Strict typing (mypy --strict)
+        run: >
+          uv run --python 3.14 --no-project
+          --with homeassistant --with holidays --with mypy --with types-python-dateutil
+          python -I -m mypy --strict --follow-imports=silent custom_components/eg4_tou
       - name: Card tests
         run: node --test tests/frontend/*.test.mjs

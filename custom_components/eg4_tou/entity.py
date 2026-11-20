@@ -1,4 +1,7 @@
+"""Base entity shared by every platform."""
 from __future__ import annotations
+
+from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -13,8 +16,8 @@ class TouEntity(CoordinatorEntity[TouCoordinator]):
     _domain: str = ""   # set by each platform class
 
     def __init__(self, coordinator: TouCoordinator, key: str, object_name: str) -> None:
-        """key: option key, also the translation key for the entity's name (translations/en.json).
-        object_name: the English name the entity id is built from."""
+        """key: option key, also the translation key for the entity's name and icon
+        (translations/en.json, icons.json). object_name: the English name the entity id is built from."""
         super().__init__(coordinator)
         # Deliberate exception to HA's usual naming: predictable ids (e.g. sensor.eg4_tou_active_profile)
         # so the shared dashboard YAML works on every install, whatever the device or area is called.
@@ -27,6 +30,7 @@ class TouEntity(CoordinatorEntity[TouCoordinator]):
             manufacturer="Community", model="EG4 12000XP local TOU",
         )
 
-    def _set_option(self, key: str, value) -> None:
+    def _set_option(self, key: str, value: Any) -> None:
+        """Store a setting in the entry options; the update listener then re-plans."""
         c = self.coordinator
         c.hass.config_entries.async_update_entry(c.entry, options={**c.entry.options, key: value})

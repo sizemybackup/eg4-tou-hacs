@@ -84,3 +84,67 @@ async def test_refuses_out_of_whitelist(gw, reg, val):
     with pytest.raises(WriteRefused):
         await Eg4Modbus(gw.cfg).write(reg, val)
     assert gw.writes == []
+
+
+class ScriptedGateway:
+    """Answers each request with frames built by `script(tid, unit, pdu) -> [frame bytes, ...]`."""
+
+    def __init__(self, script):
+        self.script = script
+
+    async def start(self):
+        self.server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+        return ModbusConfig("127.0.0.1", self.server.sockets[0].getsockname()[1], timeout=0.5, attempts=1, pause=0)
+
+    async def _handle(self, reader, writer):
+        try:
+            tid, _, length, unit = struct.unpack(">HHHB", await reader.readexactly(7))
+            pdu = await reader.readexactly(length - 1)
+            for frame in self.script(tid, unit, pdu):
+                writer.write(frame)
+            await writer.drain()
+        except asyncio.IncompleteReadError:
+            pass
+        finally:
+            writer.close()
+
+
+def frame(tid, unit, body, length=None):
+    return struct.pack(">HHHB", tid, 0, len(body) + 1 if length is None else length, unit) + body
+
+
+async def _run(script, op):
+    g = ScriptedGateway(script)
+    cfg = await g.start()
+    try:
+        return await op(Eg4Modbus(cfg))
+    finally:
+        g.server.close()
+
+
+@pytest.mark.parametrize("script, message", [
+    (lambda t, u, p: [frame(t, u, b"", length=0)], "bad MBAP length"),
+    (lambda t, u, p: [frame(t, u, bytes([0x83, 2]))], "modbus exception fc=3 code=2"),
+    (lambda t, u, p: [frame(t, u + 1, bytes([3, 2, 0, 1]))] * 16, "no matching reply"),           # wrong unit
+    (lambda t, u, p: [frame(t, u, bytes([4, 2, 0, 1]))] * 16, "no matching reply"),               # wrong function
+    (lambda t, u, p: [frame(t, u, bytes([3, 4, 0, 1, 0, 2]))] * 16, "no matching reply"),         # wrong count
+    (lambda t, u, p: [], "connection closed by gateway"),
+])
+async def test_read_rejects_malformed_replies(script, message):
+    with pytest.raises(ModbusError, match=message):
+        await _run(script, lambda c: c.read(160, 1))
+
+
+async def test_write_rejects_wrong_length_and_wrong_echo():
+    with pytest.raises(ModbusError, match="no matching reply"):
+        await _run(lambda t, u, p: [frame(t, u, p + b"\x00")] * 16, lambda c: c.write(161, 80))
+    wrong_echo = lambda t, u, p: [frame(t, u, p[:3] + struct.pack(">H", 81))]  # noqa: E731
+    with pytest.raises(ModbusError, match="write echo mismatch"):
+        await _run(wrong_echo, lambda c: c.write(161, 80))
+
+
+def test_pack_time_rejects_out_of_range():
+    from custom_components.eg4_tou.modbus import pack_time
+    for bad in ("24:00", "12:60"):
+        with pytest.raises(ValueError):
+            pack_time(bad)

@@ -507,3 +507,122 @@ async def test_diagnostics_redact_the_gateway(hass: HomeAssistant, gateway):
     assert d["config"]["host"] == "**REDACTED**"
     assert "127.0.0.1" not in str(d)
     assert d["mode"] == "off" and d["registers"]["161"]["inverter"] == "90"
+
+
+async def _setup(hass, gateway, **options):
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    if options:
+        hass.config_entries.async_update_entry(e, options=options)
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    return e
+
+
+async def test_unreachable_inverter_makes_entities_unavailable_then_recovers(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway)
+    c = e.runtime_data
+    c.client._cfg.attempts, c.client._cfg.pause = 1, 0
+    real_port = c.client._cfg.port
+    c.client._cfg.port = 1                                    # nothing listens there
+    await c.async_refresh()
+    assert hass.states.get("sensor.eg4_tou_controller_status").state == "unavailable"
+    assert hass.states.get("switch.eg4_tou_read_only_mode").state == "unavailable"
+    assert c.last_exception.translation_key == "read_failed"   # message comes from strings (exceptions)
+    c.client._cfg.port = real_port
+    await c.async_refresh()
+    assert hass.states.get("sensor.eg4_tou_controller_status").state == "off"
+
+
+async def test_refused_write_is_reported_and_retried(hass: HomeAssistant, gateway):
+    from custom_components.eg4_tou.modbus import ModbusError
+    e = await _setup(hass, gateway, enabled=True, dry_run=False)
+    c = e.runtime_data
+    gateway.regs[66] = 30                    # someone changed the inverter: one register to put back
+    with patch.object(c.client, "write", AsyncMock(side_effect=ModbusError("modbus exception fc=6 code=2"))):
+        await c.async_refresh()
+    status = hass.states.get("sensor.eg4_tou_controller_status")
+    assert "failed" in status.attributes["last_write"] and "retry next cycle" in status.attributes["last_write"]
+
+
+async def test_write_ok_but_reread_fails_keeps_the_write_result(hass: HomeAssistant, gateway):
+    from custom_components.eg4_tou.modbus import ModbusError
+    e = await _setup(hass, gateway, enabled=True, dry_run=True)
+    c = e.runtime_data
+    real_read = c.client.read
+    calls = {"n": 0}
+
+    async def read_then_fail(start, count=1):
+        calls["n"] += 1
+        if calls["n"] > 3:          # the 3 initial block reads succeed, the re-read after writing fails
+            raise ModbusError("gateway went away")
+        return await real_read(start, count)
+
+    hass.config_entries.async_update_entry(e, options={**e.options, "dry_run": False})
+    await hass.async_block_till_done()
+    calls["n"] = 0
+    gateway.regs[66] = 30                    # drift, so this cycle writes
+    with patch.object(c.client, "read", read_then_fail):
+        await c.async_refresh()
+    assert c.data.last_write.endswith("wrote regs [66]") and gateway.regs[66] != 30
+    assert c.describe(66, None) == "?"
+
+
+async def test_controls_store_their_settings(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.eg4_tou_controller_enabled"}, blocking=True)
+    await hass.services.async_call("switch", "turn_off", {"entity_id": "switch.eg4_tou_read_only_mode"}, blocking=True)
+    await hass.services.async_call("number", "set_value",
+                                   {"entity_id": "number.eg4_tou_charge_limit_winter_weekday", "value": 65}, blocking=True)
+    await hass.services.async_call("number", "set_value",
+                                   {"entity_id": "number.eg4_tou_ac_charge_power", "value": 7.5}, blocking=True)
+    await hass.services.async_call("time", "set_value",
+                                   {"entity_id": "time.eg4_tou_charge_start", "time": "02:30:00"}, blocking=True)
+    await hass.async_block_till_done()
+    o = e.options
+    assert o["enabled"] is True and o["dry_run"] is False
+    assert o["end_soc_winter"] == 65 and isinstance(o["end_soc_winter"], int)
+    assert o["ac_charge_kw"] == 7.5 and o["charge_start"] == "02:30"
+    assert hass.states.get("time.eg4_tou_charge_start").state == "02:30:00"
+
+
+async def test_diagnostics_before_first_data(hass: HomeAssistant, gateway):
+    from custom_components.eg4_tou.diagnostics import async_get_config_entry_diagnostics
+    e = await _setup(hass, gateway)
+    e.runtime_data.data = None
+    d = await async_get_config_entry_diagnostics(hass, e)
+    assert "registers" not in d and d["config"]["host"] == "**REDACTED**"
+
+
+async def test_invalid_summer_date_is_rejected(hass: HomeAssistant, gateway):
+    r = await _custom_start(hass, gateway, "seasonal")
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "start_month": "2", "start_day": 30, "end_month": "9", "end_day": 30})
+    assert r["step_id"] == "summer_dates" and r["errors"] == {"base": "bad_date"}
+
+
+async def test_reconfigure_keeps_a_renamed_title(hass: HomeAssistant, gateway):
+    e = entry_for(gateway)
+    e.add_to_hass(hass)
+    hass.config_entries.async_update_entry(e, title="Garage inverter")
+    await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    r = await e.start_reconfigure_flow(hass)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "host": "127.0.0.1", "port": gateway.port, "unit": 1, "country": "US", "subdiv": ""})
+    assert r["reason"] == "reconfigure_successful"
+    assert e.title == "Garage inverter" and e.data["subdiv"] == ""
+
+
+async def test_scan_edge_cases(hass: HomeAssistant, gateway):
+    from custom_components.eg4_tou import scanner
+    # network integration missing: no candidates, the form falls back to manual entry
+    with patch("homeassistant.components.network.async_get_adapters", AsyncMock(side_effect=RuntimeError)):
+        assert await scanner.candidate_hosts(hass) == []
+    # disabled adapters are skipped, and async_scan scans what is left
+    adapters = [{"enabled": False, "ipv4": [{"address": "192.168.5.10", "network_prefix": 24}]}]
+    with patch("homeassistant.components.network.async_get_adapters", AsyncMock(return_value=adapters)):
+        assert await scanner.async_scan(hass) == []
+    # a port that opens but never answers Modbus is reported as "not confirmed as EG4"
+    gateway.drop_first = 99
+    assert await scanner._identify("127.0.0.1", gateway.port, 1) == scanner.Found("127.0.0.1", False)

@@ -8,17 +8,20 @@ from __future__ import annotations
 import calendar
 import ipaddress
 import re
+from collections.abc import Mapping
 from datetime import date
+from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
 from .const import (CONF_COUNTRY, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
                     DOMAIN, OPT_DRY_RUN, OPT_ENABLED)
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
-from .scanner import async_scan, is_local_address
+from .scanner import Found, async_scan, is_local_address
 from .planner import MAX_PEAKS_PER_DAY, PRESETS, tariff_from_custom, validate_peaks, winter_dates
 
 TARIFF_CHOICES = {
@@ -35,7 +38,7 @@ def _hhmm(value: str) -> str:
 
 
 def _peak_schema(start: str, end: str, allow_more: bool) -> vol.Schema:
-    fields = {
+    fields: dict[Any, Any] = {
         vol.Required("start", default=start): _TIME,
         vol.Required("end", default=end): _TIME,
     }
@@ -79,10 +82,10 @@ def holiday_region(country: str, subdiv: str) -> tuple[str, str, dict[str, str]]
 CONNECTION_KEYS = (CONF_HOST, CONF_PORT, CONF_UNIT, CONF_COUNTRY, CONF_SUBDIV)
 
 
-async def _clean_connection(hass, user_input) -> tuple[dict, dict[str, str]]:
+async def _clean_connection(hass: HomeAssistant, user_input: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     """Normalise and check the gateway and holiday-region fields (no network access)."""
     host = str(user_input[CONF_HOST]).strip()
-    data = {CONF_HOST: host, CONF_PORT: int(user_input[CONF_PORT]), CONF_UNIT: int(user_input[CONF_UNIT])}
+    data: dict[str, Any] = {CONF_HOST: host, CONF_PORT: int(user_input[CONF_PORT]), CONF_UNIT: int(user_input[CONF_UNIT])}
     errors: dict[str, str] = {}
     if err := host_error(host):
         errors[CONF_HOST] = err
@@ -93,15 +96,15 @@ async def _clean_connection(hass, user_input) -> tuple[dict, dict[str, str]]:
     return data, errors
 
 
-def _title(data) -> str:
+def _title(data: Mapping[str, Any]) -> str:
     return f"EG4 TOU ({data[CONF_HOST]})"
 
 
-def _unique_id(data) -> str:
+def _unique_id(data: Mapping[str, Any]) -> str:
     return f"{data[CONF_HOST]}:{data[CONF_PORT]}:{data[CONF_UNIT]}"
 
 
-async def _probe(data) -> bool:
+async def _probe(data: Mapping[str, Any]) -> bool:
     """Read-only probe: AC charge start/end SOC."""
     try:
         await Eg4Modbus(ModbusConfig(data[CONF_HOST], data[CONF_PORT], data[CONF_UNIT])).read(160, 2)
@@ -110,7 +113,7 @@ async def _probe(data) -> bool:
     return True
 
 
-def _port_unit_fields(d) -> dict:
+def _port_unit_fields(d: Mapping[str, Any]) -> dict[Any, Any]:
     return {
         vol.Required(CONF_PORT, default=int(d.get(CONF_PORT, 502))): selector.NumberSelector(
             selector.NumberSelectorConfig(min=1, max=65535, step=1, mode=selector.NumberSelectorMode.BOX)),
@@ -119,20 +122,32 @@ def _port_unit_fields(d) -> dict:
     }
 
 
+def _show(flow: object, step_id: str, schema: vol.Schema, errors: dict[str, str] | None = None,
+          placeholders: Mapping[str, str] | None = None) -> ConfigFlowResult:
+    """async_show_form for both flow kinds. The schema is passed untyped: Home Assistant's type hints
+    expect voluptuous or, from 2026, probatio (a voluptuous-compatible drop-in), depending on version."""
+    handler = cast("config_entries.ConfigFlow | config_entries.OptionsFlow", flow)
+    return handler.async_show_form(step_id=step_id, data_schema=cast(Any, schema), errors=errors,
+                                   description_placeholders=placeholders)
+
+
 class _TariffSteps:
-    """Mixin. Subclasses implement _tariff_done(tariff_key, custom_or_None)."""
+    """Mixin for the config and options flows. Subclasses implement _tariff_done()."""
 
     _kind: str
     _todo: list[str]
-    _custom: dict
+    _custom: dict[str, Any]
     _peaks: dict[str, list[tuple[str, str]]]
     _cur_peaks: list[tuple[str, str]]
 
-    def _begin_tariff(self):
-        self._custom, self._peaks, self._cur_peaks, self._todo = {}, {}, [], []
-        return self.async_step_tariff()
+    async def _tariff_done(self, key: str, custom: dict[str, Any] | None) -> ConfigFlowResult:
+        raise NotImplementedError
 
-    async def async_step_tariff(self, user_input=None):
+    async def _begin_tariff(self) -> ConfigFlowResult:
+        self._custom, self._peaks, self._cur_peaks, self._todo = {}, {}, [], []
+        return await self.async_step_tariff()
+
+    async def async_step_tariff(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             choice = user_input[CONF_TARIFF]
             if choice in PRESETS:
@@ -148,10 +163,10 @@ class _TariffSteps:
             vol.Required("offpeak_weekends", default=True): bool,
             vol.Required("offpeak_holidays", default=True): bool,
         })
-        return self.async_show_form(step_id="tariff", data_schema=schema)
+        return _show(self, "tariff", schema)
 
-    async def async_step_summer_dates(self, user_input=None):
-        errors = {}
+    async def async_step_summer_dates(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
             try:
                 a = (int(user_input["start_month"]), int(user_input["start_day"]))
@@ -171,7 +186,7 @@ class _TariffSteps:
                     self._todo = ["summer", "winter"]
                     return await self.async_step_peak()
         month = selector.SelectSelector(selector.SelectSelectorConfig(
-            options=[{"value": str(i), "label": calendar.month_name[i]} for i in range(1, 13)],
+            options=[selector.SelectOptionDict(value=str(i), label=calendar.month_name[i]) for i in range(1, 13)],
             mode=selector.SelectSelectorMode.DROPDOWN))
         day = selector.NumberSelector(selector.NumberSelectorConfig(
             min=1, max=31, step=1, mode=selector.NumberSelectorMode.BOX))
@@ -179,9 +194,9 @@ class _TariffSteps:
             vol.Required("start_month", default="6"): month, vol.Required("start_day", default=1): day,
             vol.Required("end_month", default="9"): month, vol.Required("end_day", default=30): day,
         })
-        return self.async_show_form(step_id="summer_dates", data_schema=schema, errors=errors)
+        return _show(self, "summer_dates", schema, errors)
 
-    async def async_step_single_kind(self, user_input=None):
+    async def async_step_single_kind(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             name = user_input["kind"]
             self._custom["seasons"] = {name: {"start": [1, 1], "end": [12, 31]}}
@@ -190,12 +205,12 @@ class _TariffSteps:
         schema = vol.Schema({vol.Required("kind", default="winter"): vol.In({
             "summer": "Summer-style (uses the 'summer weekday' charge limit)",
             "winter": "Winter-style (uses the 'winter weekday' charge limit)"})})
-        return self.async_show_form(step_id="single_kind", data_schema=schema)
+        return _show(self, "single_kind", schema)
 
-    async def async_step_peak(self, user_input=None):
+    async def async_step_peak(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """On-peak window(s) for the season at the front of self._todo."""
         season = self._todo[0]
-        errors = {}
+        errors: dict[str, str] = {}
         n = len(self._cur_peaks) + 1
         if user_input is not None:
             self._cur_peaks.append((_hhmm(user_input["start"]), _hhmm(user_input["end"])))
@@ -215,21 +230,21 @@ class _TariffSteps:
                 tariff_from_custom(self._custom)  # final sanity check
                 return await self._tariff_done("custom", self._custom)
         default_start, default_end = ("16:00:00", "20:00:00") if n == 1 else ("06:00:00", "09:00:00")
-        return self.async_show_form(
-            step_id="peak", data_schema=_peak_schema(default_start, default_end, n < MAX_PEAKS_PER_DAY),
-            description_placeholders={"season": season, "n": str(n), "max": str(MAX_PEAKS_PER_DAY)},
-            errors=errors)
+        return _show(self, "peak", _peak_schema(default_start, default_end, n < MAX_PEAKS_PER_DAY), errors,
+                     {"season": season, "n": str(n), "max": str(MAX_PEAKS_PER_DAY)})
 
 
 class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    _data: dict[str, Any]
+    _found: dict[str, Found]
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> Eg4TouOptionsFlow:
         return Eg4TouOptionsFlow()
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """One screen: auto-detected gateways pre-filled, everything adjustable.
 
         The network is scanned (read-only) when the screen first opens, or when
@@ -253,12 +268,14 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             self._found = {f.host: f for f in await async_scan(self.hass)}
         d = user_input or {}
         found = self._found
-        def _what(f):
+        def _what(f: Found) -> str:
             return "looks like an EG4 inverter" if f.looks_like_eg4 else "port 502 open, not confirmed as EG4"
 
+        host_field: selector.SelectSelector | type[str]
         if found:
             host_field = selector.SelectSelector(selector.SelectSelectorConfig(
-                options=[{"value": h, "label": f"{h}  (detected by scan: {_what(f)})"} for h, f in found.items()],
+                options=[selector.SelectOptionDict(value=h, label=f"{h}  (detected by scan: {_what(f)})")
+                         for h, f in found.items()],
                 custom_value=True, mode=selector.SelectSelectorMode.DROPDOWN))
             note = ("**Detected by the network scan:**\n"
                     + "\n".join(f"- `{h}`: {_what(f)}" for h, f in found.items())
@@ -275,10 +292,9 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_SUBDIV, default=d.get(CONF_SUBDIV, "")): str,
             vol.Optional("rescan", default=False): bool,
         })
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors,
-                                    description_placeholders={"scan_result": note, "guide_url": GUIDE_URL})
+        return _show(self, "user", schema, errors, {"scan_result": note, "guide_url": GUIDE_URL})
 
-    async def async_step_reconfigure(self, user_input=None):
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Change the gateway address/port/unit or the holiday region without re-adding the integration.
         Tariff, mode and charge settings are kept."""
         entry = self._get_reconfigure_entry()
@@ -293,8 +309,10 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
                 else:
                     # keep a title the user renamed; refresh the default one that shows the address
-                    title = {"title": _title(data)} if entry.title == _title(entry.data) else {}
-                    return self.async_update_reload_and_abort(entry, unique_id=uid, data_updates=data, **title)
+                    if entry.title == _title(entry.data):
+                        return self.async_update_reload_and_abort(
+                            entry, unique_id=uid, data_updates=data, title=_title(data))
+                    return self.async_update_reload_and_abort(entry, unique_id=uid, data_updates=data)
         d = {**entry.data, **(user_input or {})}
         schema = vol.Schema({
             vol.Required(CONF_HOST, default=d[CONF_HOST]): str,
@@ -302,15 +320,15 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_COUNTRY, default=d.get(CONF_COUNTRY) or "US"): str,
             vol.Optional(CONF_SUBDIV, default=d.get(CONF_SUBDIV) or ""): str,
         })
-        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
+        return _show(self, "reconfigure", schema, errors)
 
-    async def _tariff_done(self, key, custom):
+    async def _tariff_done(self, key: str, custom: dict[str, Any] | None) -> ConfigFlowResult:
         self._data[CONF_TARIFF] = key
         if custom:
             self._data[CONF_CUSTOM] = custom
         return await self.async_step_mode()
 
-    async def async_step_mode(self, user_input=None):
+    async def async_step_mode(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             if user_input["mode"] == "read_write":
                 return await self.async_step_confirm()
@@ -318,22 +336,23 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema({vol.Required("mode", default="read_only"): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=[
-                    {"value": "read_only", "label": "Read-only (recommended): show the plan, never write"},
-                    {"value": "read_write", "label": "Read-write: apply the plan to the inverter"},
+                    selector.SelectOptionDict(value="read_only",
+                                              label="Read-only (recommended): show the plan, never write"),
+                    selector.SelectOptionDict(value="read_write", label="Read-write: apply the plan to the inverter"),
                 ],
                 mode=selector.SelectSelectorMode.LIST))})
-        return self.async_show_form(step_id="mode", data_schema=schema)
+        return _show(self, "mode", schema)
 
-    async def async_step_confirm(self, user_input=None):
-        errors = {}
+    async def async_step_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
             if user_input["understood"]:
                 return self._finish(read_only=False)
             errors["understood"] = "must_confirm"
         schema = vol.Schema({vol.Required("understood", default=False): bool})
-        return self.async_show_form(step_id="confirm", data_schema=schema, errors=errors)
+        return _show(self, "confirm", schema, errors)
 
-    def _finish(self, read_only: bool):
+    def _finish(self, read_only: bool) -> ConfigFlowResult:
         return self.async_create_entry(
             title=_title(self._data), data=self._data,
             options={OPT_ENABLED: True, OPT_DRY_RUN: read_only})
@@ -342,10 +361,10 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
 class Eg4TouOptionsFlow(_TariffSteps, config_entries.OptionsFlow):
     """Configure button: re-run the tariff steps and reload."""
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._begin_tariff()
 
-    async def _tariff_done(self, key, custom):
+    async def _tariff_done(self, key: str, custom: dict[str, Any] | None) -> ConfigFlowResult:
         data = {k: v for k, v in self.config_entry.data.items() if k != CONF_CUSTOM}
         data[CONF_TARIFF] = key
         if custom:

@@ -1,0 +1,55 @@
+{
+  "entity": {
+    "sensor": {
+      "profile": {
+        "default": "mdi:calendar-clock",
+        "state": {
+          "summer": "mdi:weather-sunny",
+          "winter": "mdi:snowflake",
+          "offpeak": "mdi:calendar-weekend"
+        }
+      },
+      "pending": {
+        "default": "mdi:file-compare"
+      },
+      "status": {
+        "default": "mdi:information-outline",
+        "state": {
+          "off": "mdi:power-off",
+          "read_only": "mdi:eye-outline",
+          "live": "mdi:pencil-circle"
+        }
+      }
+    },
+    "switch": {
+      "enabled": {
+        "default": "mdi:power"
+      },
+      "dry_run": {
+        "default": "mdi:test-tube"
+      }
+    },
+    "number": {
+      "end_soc_summer": {
+        "default": "mdi:battery-charging-80"
+      },
+      "end_soc_winter": {
+        "default": "mdi:battery-charging-70"
+      },
+      "end_soc_offpeak": {
+        "default": "mdi:battery-charging-50"
+      },
+      "ac_charge_kw": {
+        "default": "mdi:transmission-tower-import"
+      }
+    },
+    "time": {
+      "charge_start": {
+        "default": "mdi:clock-start"
+      },
+      "charge_end": {
+        "default": "mdi:clock-end"
+      }
+    }
+  }
+}

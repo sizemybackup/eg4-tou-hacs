@@ -10,8 +10,12 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 CONNECT_TIMEOUT = 0.7
 CONCURRENCY = 100
@@ -76,7 +80,7 @@ async def scan_hosts(hosts: list[str], port: int = 502, unit: int = 1) -> list[F
     return sorted(found, key=lambda f: (not f.looks_like_eg4, ipaddress.ip_address(f.host)))
 
 
-async def candidate_hosts(hass) -> list[str]:
+async def candidate_hosts(hass: HomeAssistant) -> list[str]:
     """Hosts on the /24 (or smaller) of each enabled IPv4 adapter, minus ourselves."""
     from homeassistant.components import network
 
@@ -98,5 +102,5 @@ async def candidate_hosts(hass) -> list[str]:
     return list(dict.fromkeys(hosts))
 
 
-async def async_scan(hass, port: int = 502, unit: int = 1) -> list[Found]:
+async def async_scan(hass: HomeAssistant, port: int = 502, unit: int = 1) -> list[Found]:
     return await scan_hosts(await candidate_hosts(hass), port, unit)

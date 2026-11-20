@@ -11,6 +11,14 @@
           "country": "Country code for holidays (e.g. US)",
           "subdiv": "State/region for holidays (optional, e.g. MD)",
           "rescan": "Scan again: tick this, then press Submit (setup will not continue)"
+        },
+        "data_description": {
+          "host": "Local IP address or host name of the RS485-to-Ethernet gateway wired to the inverter's RS485 port. It must be on your own network; public internet addresses are refused.",
+          "port": "The gateway's Modbus TCP port. 502 unless you changed it on the gateway.",
+          "unit": "Modbus unit (slave) id of the inverter. 1 on a standard EG4 12000XP.",
+          "country": "Two-letter country code. Used for public holidays in custom schedules (the BGE preset has its own holiday list).",
+          "subdiv": "State or region code within that country, for regional holidays. Leave empty for national holidays only.",
+          "rescan": "Tick and press Submit to scan your local network for the gateway again. Setup does not continue while this is ticked."
         }
       },
       "mode": {
@@ -18,6 +26,9 @@
         "description": "**Read-only (recommended first):** reads your inverter and shows, on the device page, exactly what the schedule WOULD change. Nothing is ever written. Use this to check the plan against your tariff before trusting it.\n\n**Read-write:** every 10 minutes the integration changes your inverter's AC-charge windows, AC First windows, charge limits and AC charge power to match the plan. You can switch between the two later with the 'Read-only mode' switch.",
         "data": {
           "mode": "Mode"
+        },
+        "data_description": {
+          "mode": "Read-only never writes to the inverter. You can change this later with the Read-only mode switch."
         }
       },
       "confirm": {
@@ -25,6 +36,9 @@
         "description": "This will modify settings on your inverter. Make sure no other automation or tool is writing the same registers (AC charge windows, AC First windows, AC charge start/end SOC, AC charge power). There is no warranty.",
         "data": {
           "understood": "I understand and want to enable writes"
+        },
+        "data_description": {
+          "understood": "Required to enable writes."
         }
       },
       "tariff": {
@@ -34,6 +48,11 @@
           "tariff": "Tariff",
           "offpeak_weekends": "Treat Saturdays and Sundays as all off-peak",
           "offpeak_holidays": "Treat public holidays as off-peak (custom schedules only)"
+        },
+        "data_description": {
+          "tariff": "A ready-made utility tariff, or a custom schedule you enter on the next screens.",
+          "offpeak_weekends": "When ticked, Saturdays and Sundays use the weekend / holiday charge limit and the battery is not held back.",
+          "offpeak_holidays": "Custom schedules only: treat the public holidays of your country and state as off-peak days."
         }
       },
       "summer_dates": {
@@ -51,6 +70,9 @@
         "description": "A single all-year schedule still uses one of the two weekday charge limits (you can change the limits afterwards).",
         "data": {
           "kind": "Schedule style"
+        },
+        "data_description": {
+          "kind": "Which weekday charge limit the all-year schedule uses."
         }
       },
       "peak": {
@@ -60,6 +82,11 @@
           "start": "Peak starts",
           "end": "Peak ends",
           "add_another": "Add a second peak window"
+        },
+        "data_description": {
+          "start": "Start of the on-peak window, in local time.",
+          "end": "End of the on-peak window, in local time. Must be later than the start on the same day.",
+          "add_another": "Tick if this season has a second on-peak window later in the day."
         }
       },
       "reconfigure": {
@@ -71,6 +98,13 @@
           "unit": "Modbus unit id",
           "country": "Country code for holidays (e.g. US)",
           "subdiv": "State/region for holidays (optional, e.g. MD)"
+        },
+        "data_description": {
+          "host": "Local IP address or host name of the RS485-to-Ethernet gateway wired to the inverter's RS485 port. It must be on your own network; public internet addresses are refused.",
+          "port": "The gateway's Modbus TCP port. 502 unless you changed it on the gateway.",
+          "unit": "Modbus unit (slave) id of the inverter. 1 on a standard EG4 12000XP.",
+          "country": "Two-letter country code. Used for public holidays in custom schedules (the BGE preset has its own holiday list).",
+          "subdiv": "State or region code within that country, for regional holidays. Leave empty for national holidays only."
         }
       }
     },
@@ -105,6 +139,11 @@
           "tariff": "Tariff",
           "offpeak_weekends": "Treat Saturdays and Sundays as all off-peak",
           "offpeak_holidays": "Treat public holidays as off-peak (custom schedules only)"
+        },
+        "data_description": {
+          "tariff": "A ready-made utility tariff, or a custom schedule you enter on the next screens.",
+          "offpeak_weekends": "When ticked, Saturdays and Sundays use the weekend / holiday charge limit and the battery is not held back.",
+          "offpeak_holidays": "Custom schedules only: treat the public holidays of your country and state as off-peak days."
         }
       },
       "summer_dates": {
@@ -122,6 +161,9 @@
         "description": "A single all-year schedule still uses one of the two weekday charge limits (you can change the limits afterwards).",
         "data": {
           "kind": "Schedule style"
+        },
+        "data_description": {
+          "kind": "Which weekday charge limit the all-year schedule uses."
         }
       },
       "peak": {
@@ -131,6 +173,11 @@
           "start": "Peak starts",
           "end": "Peak ends",
           "add_another": "Add a second peak window"
+        },
+        "data_description": {
+          "start": "Start of the on-peak window, in local time.",
+          "end": "End of the on-peak window, in local time. Must be later than the start on the same day.",
+          "add_another": "Tick if this season has a second on-peak window later in the day."
         }
       }
     },
@@ -195,6 +242,11 @@
       "charge_end": {
         "name": "Charge end"
       }
+    }
+  },
+  "exceptions": {
+    "read_failed": {
+      "message": "Could not read the inverter through the Modbus gateway: {error}"
     }
   }
 }

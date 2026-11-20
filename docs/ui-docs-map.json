@@ -31,7 +31,7 @@
         "custom_components/eg4_tou/number.py",
         "custom_components/eg4_tou/time.py",
         "custom_components/eg4_tou/sensor.py",
-        "custom_components/eg4_tou/base.py",
+        "custom_components/eg4_tou/entity.py",
         "custom_components/eg4_tou/const.py"
       ],
       "articles": [

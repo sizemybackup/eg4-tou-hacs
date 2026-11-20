@@ -28,6 +28,16 @@ The result is a battery cycled between its discharge floor and a modest ceiling
 (good for cell life), spent only on the expensive hours. Peak hours come from the
 tariff preset; AC First windows are derived automatically as the complement.
 
+## What you can do with it
+
+* **Cycle the battery for cell life:** charge overnight to a modest ceiling (80/70/50%) instead of
+  100%, and spend it only during the expensive hours.
+* **Follow a time-of-use tariff without the cloud:** the hold windows move with the season, weekends,
+  holidays and (for BGE) the spring/fall one-hour peak shift, with no EG4 account or portal involved.
+* **See before you trust:** read-only mode shows exactly what it would change, register by register.
+* **Adjust from Home Assistant:** change charge limits, charge power or the charge window from the
+  dashboard or from your own automations (examples below), and the inverter follows within seconds.
+
 ## Dashboard
 
 A ready-made dashboard (core cards only, no custom JavaScript) is in
@@ -62,11 +72,20 @@ find/replace them in the raw editor.
 
 ## Requirements
 
-* EG4 12000XP (V2) with a Modbus TCP gateway on its RS485 port. Other EG4 models
-  that use the same register map may work; not tested.
 * Home Assistant 2025.1+, HACS.
+* An RS485-to-Ethernet gateway set to Modbus TCP, wired to the inverter's RS485 port (see the
+  [wiring and gateway guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html)).
 * This is independent of, and does not replace, the EG4 monitoring integration.
   Run it alongside whichever monitoring integration you use.
+
+### Supported devices
+
+| Device | Status |
+|---|---|
+| EG4 12000XP (V2) | Supported: developed and run daily on one (firmware `ceaa-0508`). |
+| Other EG4 models with the same register map (AC charge windows 68-73, AC First windows 152-157, AC charge SOC 160/161, AC charge power 66) | Untested. Use read-only mode first and compare "Today's rules" with the inverter's own screen. |
+| EG4 inverters with a different register map, and non-EG4 inverters | Not supported. Setup's read-only probe may succeed on any Modbus device, so do not enable read-write on them. |
+| Gateways | Any RS485-to-Modbus-TCP gateway that forwards Modbus RTU should work; the integration copes with gateways that broadcast replies to every client. |
 
 ## Install
 
@@ -109,6 +128,128 @@ week's schedule; the gateway address is removed.
 
 A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manager](https://sizemybackup.com/eg4-local-tou-manager-home-assistant.html).
 
+### Setup fields
+
+| Field | What to enter |
+|---|---|
+| Gateway | Local IP address or host name of the RS485-to-Ethernet gateway. Pre-filled when the scan finds one. Public internet addresses are refused. |
+| Modbus TCP port | The gateway's Modbus TCP port, usually 502. |
+| Modbus unit id | The inverter's Modbus address, 1 on a standard 12000XP. |
+| Country code | Two-letter code (US, CA, ...) for public holidays in custom schedules. Checked against the holidays library. |
+| State/region | Optional state or region code (MD, ...) for regional holidays. |
+| Tariff | The BGE Schedule RL preset, custom summer + winter, or one schedule all year. |
+| Weekends off-peak | Treat Saturdays and Sundays as all off-peak days. |
+| Holidays off-peak | Custom schedules: treat public holidays as off-peak days. |
+| Summer dates | Custom summer + winter: first and last day of summer; the rest of the year is winter. |
+| On-peak windows | Custom schedules: 1 or 2 weekday on-peak windows per season (same day, no overlap). |
+| Mode | Read-only (never writes) or read-write (asks you to confirm). |
+
+### Settings you can change later
+
+* **Configure** button: the tariff (preset or custom peak windows, weekends, holidays).
+* **Reconfigure** (three-dot menu): gateway address, port, unit id, holiday country/state.
+* Entities on the device page (also on the dashboard):
+
+| Entity | What it does |
+|---|---|
+| `switch.eg4_tou_controller_enabled` | Master switch. Off: nothing is planned or written. |
+| `switch.eg4_tou_read_only_mode` | On: plan only, never write. Off: write differences to the inverter. |
+| `number.eg4_tou_charge_limit_summer_weekday` | AC charge end SOC on summer weekdays (20-100%). |
+| `number.eg4_tou_charge_limit_winter_weekday` | AC charge end SOC on winter weekdays (20-100%). |
+| `number.eg4_tou_charge_limit_weekend_holiday` | AC charge end SOC on weekends and holidays (20-100%). |
+| `number.eg4_tou_ac_charge_power` | AC charge power while grid charging (1-10 kW). |
+| `time.eg4_tou_charge_start`, `time.eg4_tou_charge_end` | The overnight AC charge window. |
+| `sensor.eg4_tou_active_profile` | Today's profile: summer weekday, winter weekday or weekend / holiday. Attributes hold the plan, the timeline and the week ahead for the cards. |
+| `sensor.eg4_tou_controller_status` | Off, read-only or live (writing); `last_write` attribute shows the last write and any error. |
+| `sensor.eg4_tou_registers_out_of_sync` | How many inverter settings differ from the plan; `changes` lists them. |
+
+## How data is updated
+
+Every 10 minutes the integration opens a short Modbus connection, reads the managed registers (three
+small blocks), works out today's plan and compares. In live mode it writes only the registers that
+differ, in a safe order, then reads them back to confirm. Changing any setting re-plans straight away.
+If the inverter cannot be read, the entities become unavailable and Home Assistant logs it once (and
+once more when it recovers); the next cycle tries again. Nothing is kept in the cloud.
+
+## Automation examples
+
+Get a notification if the inverter's settings stay different from the plan in live mode:
+
+```yaml
+alias: EG4 TOU - settings not applied
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.eg4_tou_registers_out_of_sync
+    above: 0
+    for: "00:30:00"
+conditions:
+  - condition: state
+    entity_id: sensor.eg4_tou_controller_status
+    state: live
+actions:
+  - action: persistent_notification.create
+    data:
+      title: EG4 TOU
+      message: "Not applied: {{ state_attr('sensor.eg4_tou_registers_out_of_sync', 'changes') | join(', ') }}"
+```
+
+Charge to 100% while a storm helper is on, and back to 70% afterwards:
+
+```yaml
+alias: EG4 TOU - storm mode
+triggers:
+  - trigger: state
+    entity_id: input_boolean.storm_mode
+actions:
+  - action: number.set_value
+    target:
+      entity_id: number.eg4_tou_charge_limit_winter_weekday
+    data:
+      value: "{{ 100 if trigger.to_state.state == 'on' else 70 }}"
+```
+
+Warn when the gateway has been unreachable for an hour:
+
+```yaml
+alias: EG4 TOU - gateway unreachable
+triggers:
+  - trigger: state
+    entity_id: sensor.eg4_tou_controller_status
+    to: unavailable
+    for: "01:00:00"
+actions:
+  - action: persistent_notification.create
+    data:
+      title: EG4 TOU
+      message: The Modbus gateway has not answered for an hour.
+```
+
+## Troubleshooting
+
+* **Setup says "Could not read the inverter through that gateway":** check that the gateway is powered
+  and on the same network, that it is in Modbus TCP mode on the port you entered, and the RS485 wiring
+  and serial settings in the [wiring and gateway guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html).
+* **All entities are unavailable:** the inverter could not be read in the last cycle. Check the gateway
+  as above; the log has the reason. The integration retries every 10 minutes.
+* **"Registers out of sync" stays above 0 in live mode:** something else is writing the same settings
+  (an automation, the EG4 app or the inverter's screen), or the inverter refused a write. The
+  `last_write` attribute of Controller status shows the error, and `changes` on the out-of-sync sensor
+  lists what differs.
+* **Another integration's EG4 sensors glitch now and then:** some gateways send every reply to every
+  connected client. This integration keeps its connections short to limit that; see Known limitations.
+* **A holiday is treated as a workday, or the other way round:** the BGE preset uses BGE's own holiday
+  list. For custom schedules, check the country and state under Reconfigure, and the holiday checkbox
+  under Configure.
+* **Still stuck:** open an issue with the file from **Download diagnostics** (gateway address removed).
+
+## Removing the integration
+
+1. Settings, Devices & services, **EG4 Local TOU Manager**, three dots, **Delete**.
+2. Remove it from HACS / the Marketplace, delete the dashboard if you added it, and restart Home Assistant.
+
+Removing it does **not** change the inverter: the last charge windows, hold windows and limits it wrote
+stay in place. Set them back on the inverter or in the EG4 app if you want different ones.
+
 ## Security
 
 Modbus TCP has no authentication or encryption: keep the gateway on a trusted network, never forward
@@ -117,7 +258,7 @@ credentials, defaults to read-only, can write only a short whitelist of inverter
 network scan only reads and only touches your own private network. Details, and how to report a
 problem privately, are in [SECURITY.md](SECURITY.md).
 
-## Known limits in v0.1
+## Known limitations
 
 * The scan covers one /24 per network adapter and only port 502. Gateways on
   another subnet or VLAN, or on a non-standard port, need manual entry.
@@ -152,9 +293,17 @@ drift, `tools/check_ui_docs.py` knows which source files change what users see
 ## Development
 
 ```
-uv run --no-project --with pytest-homeassistant-custom-component --with holidays --with home-assistant-frontend python -I -m pytest
-node --test tests/frontend/card.test.mjs      # the timeline card's rendering
+uv run --python 3.14 --no-project --with pytest-homeassistant-custom-component --with holidays \
+    --with home-assistant-frontend --with pytest-cov python -I -m pytest --cov=custom_components/eg4_tou
+uv run --python 3.14 --no-project --with homeassistant --with holidays --with mypy \
+    --with types-python-dateutil python -I -m mypy --strict --follow-imports=silent custom_components/eg4_tou
+node --test tests/frontend/*.test.mjs        # the cards' rendering
 ```
+
+The CI (`.github/workflows/validate.yml`) runs all of these plus the HACS check and hassfest on every
+push. `custom_components/eg4_tou/quality_scale.yaml` is a self-assessment against Home Assistant's
+[integration quality scale](https://contributors.home-assistant.io/core/quality-scale/): every rule is
+done or exempt with a reason. It is not an official rating; those exist only for integrations in core.
 ### Clean-install test
 
 `tools/clean_install_test.py` downloads a **published** release from GitHub, installs it into a brand-new
@@ -164,8 +313,8 @@ cards rendering in a real browser, Configure and the reload it triggers, a Home 
 clean uninstall. Run it before tagging a release:
 
 ```
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.8.0
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.8.0 \
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.9.0
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.9.0 \
     --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4        # oldest supported version
 ```
 

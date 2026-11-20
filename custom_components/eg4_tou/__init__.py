@@ -20,9 +20,10 @@ CARD_FILES = ("eg4-tou-timeline-card.js", "eg4-tou-rules-card.js")
 if TYPE_CHECKING:  # keep HA imports out of module scope so the pure logic is testable
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.typing import ConfigType
 
 
-async def async_setup(hass: "HomeAssistant", config: dict) -> bool:
+async def async_setup(hass: "HomeAssistant", config: "ConfigType") -> bool:
     """Serve the dashboard cards and load them on every dashboard page (once per HA run)."""
     from homeassistant.components.frontend import add_extra_js_url
     from homeassistant.components.http import StaticPathConfig
