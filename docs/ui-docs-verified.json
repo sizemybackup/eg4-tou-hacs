@@ -5,16 +5,16 @@
       "hash": "ec1f942d0de26af0d2eb5957766179dbd890166a1dfe792126d125047936b941"
     },
     "dashboard-and-cards": {
-      "hash": "57046bd3f1e4d72a01d4d54c654d14ed7a9c0c30214e68bd749fb9ca6fb59bcf"
+      "hash": "0376df11327faf44a5024ad582048221969b8cc3c5772858a2329ce46d6c0c8b"
     },
     "device-and-entities": {
-      "hash": "98e20287b2c8f1a3ed38a7b343e74a91451acd0d014001e090d01bf97a697979"
+      "hash": "eaf7b128142b1a82d33b458cc31c5a156632dbd0ce9851c00cf26c4a7479bb91"
     },
     "schedule-logic": {
-      "hash": "6f73a2e295396f6a64e3b042faa0992df83248686c08951a4c67e2c880eecb1d"
+      "hash": "660c77ae64934cb3d2dd389d8099e36647cffb74ec70232ea14bfb26cd216f3f"
     },
     "setup-wizard": {
-      "hash": "f11c6f4a672d41b3f941ecbf2ca90759e2585cf8105b6cf189d132cb80962e36"
+      "hash": "67e73506ac996e1fe8efd7e7f603f0c8811c6ef0017c4be169a991ec0408eaa5"
     }
   }
 }
