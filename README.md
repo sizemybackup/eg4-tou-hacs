@@ -55,13 +55,20 @@ changes, and all the controls.
 Times on both cards follow your Home Assistant profile (Profile, *Time format*: 12-hour or 24-hour). Set
 `time_format: 12` or `24` on a card to override that for one card.
 
-**Editing the schedule on the timeline card (administrators).** Press **Edit** on the timeline. Drag the two
-handles of the overnight charge window (or the bar, to move the whole window; steps of 15 minutes, or use the
-arrow keys on a focused handle), open the **Charge limits** and **AC charge power** expanders for the sliders, and press
+**Editing the schedule on the timeline card (administrators).** Press **Edit** on the timeline. Drag the handles
+of the **on-peak windows** and of the overnight charge window (or a bar, to move the whole window; steps of 15 minutes,
+or use the arrow keys on a focused handle). Windows cannot cross each other; **+ Add window** adds a second on-peak
+window (the inverter supports two) and **Remove** deletes one. The **hold windows** (AC First) update live as you drag,
+because they are simply the rest of the day. Open **Charge limits** and **AC charge power** for the sliders, and press
 **Save**. Everything you changed is applied in one step (the `eg4_tou.update_settings` action), so the inverter never
-sees half a window. **Cancel** throws the edit away. The card warns if the charge window overlaps an on-peak
-period. On-peak hours come from your tariff and are not edited here (use **Configure**), and the hold windows
-follow them. In read-only mode a save changes the plan only; nothing is written to the inverter.
+sees half a schedule. **Cancel** throws the edit away, and **Reset to tariff** puts your tariff's own peak hours back.
+The card warns if the charge window overlaps an on-peak period.
+
+On-peak edits are stored as your own hours for the current **season** (every weekday of it; weekends and
+holidays stay all off-peak) and sit on top of your tariff, so the BGE holiday list and its daylight-saving shift
+still apply (during the shift weeks the card tells you the tariff moves your hours an hour later). Running
+**Configure** and choosing a tariff again clears them. In read-only mode a save changes the plan only; nothing is
+written to the inverter.
 
 To add it by hand instead (you unticked the box, or Home Assistant could not create it and told you so): Settings,
 Dashboards, Add dashboard, *New dashboard from scratch*; open it, three dots, Edit dashboard, three dots,
@@ -173,7 +180,7 @@ A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manag
 | `number.eg4_tou_charge_limit_weekend_holiday` | AC charge end SOC on weekends and holidays (20-100%). |
 | `number.eg4_tou_ac_charge_power` | AC charge power while grid charging (1-10 kW). |
 | `time.eg4_tou_charge_start`, `time.eg4_tou_charge_end` | The overnight AC charge window. |
-| action `eg4_tou.update_settings` | Change the charge window, the three charge limits and the AC charge power in one call (what the timeline card's Save uses). Administrators only; the window must end after it starts. |
+| action `eg4_tou.update_settings` | Change the on-peak windows, the charge window, the three charge limits and the AC charge power in one call (what the timeline card's Save uses). Administrators only; the window must end after it starts. |
 | `sensor.eg4_tou_active_profile` | Today's profile: summer weekday, winter weekday or weekend / holiday. Attributes hold the plan, the timeline and the week ahead for the cards. |
 | `sensor.eg4_tou_controller_status` | Off, read-only or live (writing); `last_write` attribute shows the last write and any error. |
 | `sensor.eg4_tou_registers_out_of_sync` | How many inverter settings differ from the plan; `changes` lists them. |

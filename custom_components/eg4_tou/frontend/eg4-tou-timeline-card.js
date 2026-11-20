@@ -113,22 +113,66 @@ const LIMITS = { soc: [20, 100, 1], kw: [1, 10, 0.5] };
 
 const snap = (min) => Math.round(min / STEP) * STEP;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-/** Draft of the editable settings from the sensor's `settings` attribute (null if the integration is too old). */
-function draftFrom(settings) {
+const hhmm = (min) => { const m = min >= DAY ? DAY - 1 : min; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
+const sameWins = (a, b) => a.length === b.length && a.every((w, i) => w.start === b[i].start && w.end === b[i].end);
+const winsOf = (list) => (list || []).map(([a, b]) => ({ start: toMin(a), end: toMin(b) })).sort((x, y) => x.start - y.start);
+const winStrs = (wins) => wins.map((w) => [hhmm(w.start), hhmm(w.end)]);
+
+/** Draft of the editable settings from the sensor's `settings` and `peak_edit` attributes (null if the integration is too old). */
+function draftFrom(settings, pe) {
   if (!settings || !settings.charge_start || !settings.charge_end) return null;
   const a = toMin(settings.charge_start), b = toMin(settings.charge_end);
-  return { start: a, end: b, end_soc_summer: Number(settings.end_soc_summer), end_soc_winter: Number(settings.end_soc_winter),
-    end_soc_offpeak: Number(settings.end_soc_offpeak), ac_charge_kw: Number(settings.ac_charge_kw) };
+  const d = { start: a, end: b, end_soc_summer: Number(settings.end_soc_summer), end_soc_winter: Number(settings.end_soc_winter),
+    end_soc_offpeak: Number(settings.end_soc_offpeak), ac_charge_kw: Number(settings.ac_charge_kw), peaks: null };
+  if (pe && Array.isArray(pe.peaks)) {
+    d.peaks = winsOf(pe.peaks); d.def = winsOf(pe.default); d.season = pe.season; d.shift = Number(pe.shift_hours || 0);
+    d.max = Number(pe.max_windows || 2); d.overridden = !!pe.overridden;
+  }
+  return d;
 }
-/** Move a handle (or the whole window) to a pointer position, keeping 15 min between them and inside the day. */
-function dragTo(draft, mode, min, grab) {
-  const len = draft.end - draft.start;
-  if (mode === "start") return { ...draft, start: clamp(snap(min), 0, draft.end - STEP) };
-  if (mode === "end") return { ...draft, end: clamp(snap(min), draft.start + STEP, DAY) };
-  const start = clamp(snap(min - (grab || 0)), 0, DAY - len);
-  return { ...draft, start, end: start + len };
+/** Move a handle (or the whole window) to a pointer position: 15 min minimum length, kept between lo and hi
+ *  (the neighbouring window, or the edges of the day). win = {start, end}; returns the new {start, end}. */
+function dragWin(win, mode, min, grab, lo = 0, hi = DAY) {
+  const len = win.end - win.start;
+  if (mode === "start") return { start: clamp(snap(min), lo, win.end - STEP), end: win.end };
+  if (mode === "end") return { start: win.start, end: clamp(snap(min), win.start + STEP, hi) };
+  const start = clamp(snap(min - (grab || 0)), lo, hi - len);
+  return { start, end: start + len };
 }
-const hhmm = (min) => { const m = min >= DAY ? DAY - 1 : min; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
+/** The overnight window: same as dragWin on the draft's own start/end (kept for the tests and callers). */
+function dragTo(draft, mode, min, grab) { return { ...draft, ...dragWin(draft, mode, min, grab) }; }
+/** Room each window has: between the previous window's end and the next one's start. */
+const bounds = (peaks, i) => [i > 0 ? peaks[i - 1].end : 0, i < peaks.length - 1 ? peaks[i + 1].start : DAY];
+/** If the handle (window id "p0"/"p1", mode start/end) sits exactly on a neighbouring window's handle, the pair
+ *  { end: [id, "end"] of the earlier window, start: [id, "start"] of the later one }; else null. */
+function touching(peaks, id, mode) {
+  if (!peaks || id === "c" || (mode !== "start" && mode !== "end")) return null;
+  const i = Number(id.slice(1));
+  if (mode === "start" && i > 0 && peaks[i - 1] && peaks[i - 1].end === peaks[i].start) return { end: [`p${i - 1}`, "end"], start: [id, "start"] };
+  if (mode === "end" && peaks[i + 1] && peaks[i + 1].start === peaks[i].end) return { end: [id, "end"], start: [`p${i + 1}`, "start"] };
+  return null;
+}
+/** A free hour (or the biggest gap if smaller) for "+ Add window"; null when there is no room for 15 minutes. */
+function newPeak(peaks) {
+  let best = null, cursor = 0;
+  for (const w of [...peaks, { start: DAY, end: DAY }]) {
+    if (!best || w.start - cursor > best[1] - best[0]) best = [cursor, w.start];
+    cursor = w.end;
+  }
+  const gap = best[1] - best[0];
+  if (gap < STEP) return null;
+  const len = Math.min(60, gap), start = clamp(snap(best[0] + (gap - len) / 2), best[0], best[1] - len);
+  return { start, end: start + len };
+}
+/** Hold windows (AC First) the planner derives from these on-peak windows (shifted by `shift` hours in
+ *  daylight-saving weeks): the rest of the day, as [[HH:MM, HH:MM], ...]. Mirrors the integration. */
+function holdFrom(peaks, shift) {
+  const eff = peaks.map((w) => ({ start: w.start + shift * 60, end: Math.min(DAY, w.end + shift * 60) })).filter((w) => w.start < DAY);
+  const out = []; let cursor = 0;
+  for (const w of eff) { if (w.start > cursor) out.push([cursor, w.start]); cursor = w.end; }
+  if (cursor < DAY - 1) out.push([cursor, DAY]);
+  return out.map(([x, y]) => [hhmm(x), hhmm(y)]);
+}
 /** Only the settings that changed, as the update_settings service wants them (empty = nothing to save). */
 function changes(draft, base) {
   const out = {};
@@ -136,9 +180,13 @@ function changes(draft, base) {
   if (hhmm(draft.end) !== hhmm(base.end)) out.charge_end = hhmm(draft.end);
   for (const [k] of SOC_KEYS) if (draft[k] !== base[k]) out[k] = draft[k];
   if (draft.ac_charge_kw !== base.ac_charge_kw) out.ac_charge_kw = draft.ac_charge_kw;
+  if (draft.peaks && base.peaks && !sameWins(draft.peaks, base.peaks)) {
+    // back to the tariff's own windows = no override
+    out.peaks = { [draft.season]: sameWins(draft.peaks, draft.def) ? null : winStrs(draft.peaks) };
+  }
   return out;
 }
-/** Does the charge window overlap an on-peak window (grid charging at peak rates)? */
+/** Does the charge window overlap an on-peak window (grid charging at peak rates)? peaks: [[HH:MM, HH:MM], ...] */
 function overlapsPeak(draft, peaks) {
   return (peaks || []).some(([a, b]) => draft.start < toMin(b) && toMin(a) < draft.end);
 }
@@ -150,26 +198,36 @@ function slider(key, label, value, [lo, hi, step], unit, active) {
     `<output data-out="${key}">${value}${unit}</output></label>`;
 }
 
-/** Pure: the editor. draft/base as from draftFrom(); ctx = { model, now, h24, profile, mode } */
+/** Pure: the editor. draft/base as from draftFrom(); ctx = { model, now, h24, profile } */
 function renderEditor(draft, base, ctx) {
   const { model, now, h24, profile } = ctx;
-  const m = model || {}, peaks = m.peaks || [];
+  const m = model || {};
   const dirty = Object.keys(changes(draft, base)).length > 0;
+  const winParts = (id, name, aria) => `<div class="bar ${name} draggable" data-drag="move" data-win="${id}" data-el="bar-${id}"></div>` +
+    `<div class="handle" data-drag="start" data-win="${id}" data-el="hs-${id}" role="slider" tabindex="0" aria-label="${aria} start" aria-valuemin="0" aria-valuemax="1425"></div>` +
+    `<div class="handle" data-drag="end" data-win="${id}" data-el="he-${id}" role="slider" tabindex="0" aria-label="${aria} end" aria-valuemin="15" aria-valuemax="1440"></div>`;
+  const peakLane = draft.peaks
+    ? `<div class="lane"><div class="head"><span class="name">On-peak hours (${esc(draft.season)})</span>` +
+      `<span><button class="btn small" data-act="addpeak">+ Add window</button> <button class="btn small" data-act="resetpeaks">Reset to tariff</button></span></div>` +
+      `<div class="track edit" data-el="track-p"><i class="now" style="left:${pct(now).toFixed(2)}%"></i>${winParts("p0", "peak", "On-peak window 1")}${winParts("p1", "peak", "On-peak window 2")}</div>` +
+      [0, 1].map((i) => `<div class="prow" data-el="prow-${i}"><span data-el="ptxt-${i}"></span> <button class="btn small" data-act="rmpeak" data-i="${i}">Remove</button></div>`).join("") +
+      `<div class="note" data-el="pnote"></div></div>` +
+      `<div class="lane"><div class="head"><span class="name">Hold windows (AC First), follow the peaks</span></div>` +
+      `<div class="track" data-el="holdtrack"></div><div class="txt" data-el="holdtxt"></div></div>`
+    : lane("On-peak hours (your tariff)", "peak", m.peaks || [], null, now, false, h24);
   return `<div class="card-body editing">` +
     `<div class="titlebar"><div class="title">Edit schedule</div>` +
     `<span><button class="btn" data-act="cancel">Cancel</button> <button class="btn primary" data-act="save"${dirty ? "" : " disabled"}>Save</button></span></div>` +
-    lane("On-peak hours (your tariff)", "peak", peaks, null, now, false, h24) +
+    peakLane +
     `<div class="lane"><div class="head"><span class="name">Overnight charge window</span><span class="st" data-el="dur"></span></div>` +
-    `<div class="track edit" data-el="track"><i class="now" style="left:${pct(now).toFixed(2)}%"></i>` +
-    `<div class="bar charge draggable" data-drag="move" data-el="bar"></div>` +
-    `<div class="handle" data-drag="start" data-el="hs" role="slider" tabindex="0" aria-label="Charge start" aria-valuemin="0" aria-valuemax="1425"></div>` +
-    `<div class="handle" data-drag="end" data-el="he" role="slider" tabindex="0" aria-label="Charge end" aria-valuemin="15" aria-valuemax="1440"></div></div>` +
+    `<div class="track edit" data-el="track-c"><i class="now" style="left:${pct(now).toFixed(2)}%"></i>${winParts("c", "charge", "Charge")}</div>` +
     `<div class="txt" data-el="when"></div><div class="warn" data-el="peakwarn">⚠ This window overlaps an on-peak period, so it would charge from the grid at peak rates.</div></div>` +
     axis(now, h24) +
     `<details class="exp" open><summary>Charge limits (overnight charge stops at)</summary>` +
     SOC_KEYS.map(([k, label, prof]) => slider(k, label, draft[k], LIMITS.soc, "%", prof === profile)).join("") + `</details>` +
     `<details class="exp"><summary>AC charge power</summary>${slider("ac_charge_kw", "Grid charging power", draft.ac_charge_kw, LIMITS.kw, " kW", false)}</details>` +
-    `<div class="note">The hold windows follow your on-peak hours, so they are not edited here. Peak hours come from your tariff (Reconfigure the integration to change them).</div>` +
+    `<div class="note">Drag a handle to change a time, or the bar to move the whole window (steps of ${STEP} min; arrow keys work on a focused handle).` +
+    (draft.peaks ? " On-peak edits apply to every weekday of that season; weekends and holidays stay all off-peak." : " Peak hours come from your tariff (Configure the integration to change them).") + `</div>` +
     `<div class="msg-line" data-el="msg" role="status"></div></div>`;
 }
 
@@ -217,6 +275,8 @@ const STYLE = `
   .btn { font: inherit; font-size: 0.85em; padding: 5px 12px; border-radius: 16px; cursor: pointer; border: 1px solid var(--divider-color, #888);
     background: transparent; color: var(--primary-text-color); }
   .btn.primary { background: var(--primary-color, #03a9f4); border-color: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); }
+  .btn.small { font-size: 0.78em; padding: 3px 9px; }
+  .prow { font-size: 0.8em; color: var(--secondary-text-color); margin-top: 3px; display: flex; gap: 8px; align-items: center; }
   .btn[disabled] { opacity: .45; cursor: default; }
   .track.edit { height: 40px; overflow: visible; touch-action: none; user-select: none; border-radius: 8px; }
   .track.edit .bar { top: 4px; bottom: 4px; border-radius: 6px; }
@@ -273,7 +333,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
     _h24() { return resolveH24(this._hass.locale, this._config.time_format, typeof navigator !== "undefined" ? navigator.language : undefined); }
     _canEdit(st) {
       const admin = !this._hass.user || this._hass.user.is_admin !== false;
-      return this._config.editable !== false && admin && !!draftFrom(st.attributes.settings);
+      return this._config.editable !== false && admin && !!draftFrom(st.attributes.settings, null);
     }
     _render(force) {
       if (!this._hass || !this._b) return;
@@ -296,8 +356,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
 
     // ---- editing
     _startEdit(st) {
-      const base = draftFrom(st.attributes.settings);
-      this._edit = { base, draft: { ...base }, st };
+      const base = draftFrom(st.attributes.settings, st.attributes.peak_edit);
+      this._edit = { base, draft: { ...base, peaks: base.peaks && base.peaks.map((w) => ({ ...w })) }, st };
       this._saved = "";
       this._drawEditor();
     }
@@ -308,19 +368,44 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
       this._sync();
     }
     _el(n) { return this._b.querySelector(`[data-el="${n}"]`); }
-    /** Update the handles, bar and texts in place (the sliders keep focus while you drag). */
+    /** Position one window's bar and handles. */
+    _place(id, w, h24) {
+      const bar = this._el(`bar-${id}`), hs = this._el(`hs-${id}`), he = this._el(`he-${id}`);
+      for (const el of [bar, hs, he]) el.style.display = w ? "" : "none";
+      if (!w) return;
+      bar.style.left = pct(w.start).toFixed(2) + "%"; bar.style.width = (pct(w.end) - pct(w.start)).toFixed(2) + "%";
+      hs.style.left = pct(w.start).toFixed(2) + "%"; he.style.left = pct(w.end).toFixed(2) + "%";
+      hs.setAttribute("aria-valuenow", w.start); he.setAttribute("aria-valuenow", w.end);
+      hs.setAttribute("aria-valuetext", fmtTime(w.start, h24)); he.setAttribute("aria-valuetext", fmtTime(w.end, h24));
+    }
+    /** Update the handles, bars and texts in place (focus and the drag in progress are kept). */
     _sync() {
       const e = this._edit; if (!e) return;
-      const d = e.draft, h24 = this._h24();
-      const bar = this._el("bar");
-      bar.style.left = pct(d.start).toFixed(2) + "%"; bar.style.width = (pct(d.end) - pct(d.start)).toFixed(2) + "%";
-      const hs = this._el("hs"), he = this._el("he");
-      hs.style.left = pct(d.start).toFixed(2) + "%"; he.style.left = pct(d.end).toFixed(2) + "%";
-      hs.setAttribute("aria-valuenow", d.start); he.setAttribute("aria-valuenow", d.end);
-      hs.setAttribute("aria-valuetext", fmtTime(d.start, h24)); he.setAttribute("aria-valuetext", fmtTime(d.end, h24));
+      const d = e.draft, h24 = this._h24(), now = nowMinutes((this._hass.config || {}).time_zone);
+      this._place("c", { start: d.start, end: d.end }, h24);
       this._el("dur").textContent = durText(d.end - d.start);
-      this._el("when").textContent = `${fmtTime(d.start, h24)} → ${fmtTime(d.end, h24)}. Drag the handles, or the bar to move it (steps of ${STEP} min).`;
-      this._el("peakwarn").classList.toggle("show", overlapsPeak(d, (e.st.attributes.timeline || {}).peaks));
+      this._el("when").textContent = `${fmtTime(d.start, h24)} → ${fmtTime(d.end, h24)}`;
+      let peaks = (e.st.attributes.timeline || {}).peaks;
+      if (d.peaks) {
+        [0, 1].forEach((i) => {
+          const w = d.peaks[i];
+          this._place(`p${i}`, w, h24);
+          this._el(`prow-${i}`).style.display = w ? "" : "none";
+          if (w) this._el(`ptxt-${i}`).textContent = `Window ${i + 1}: ${fmtTime(w.start, h24)} → ${fmtTime(w.end, h24)}`;
+        });
+        const add = this._b.querySelector('[data-act="addpeak"]'), reset = this._b.querySelector('[data-act="resetpeaks"]');
+        add.disabled = d.peaks.length >= d.max || !newPeak(d.peaks);
+        reset.disabled = sameWins(d.peaks, d.def);
+        this._el("pnote").textContent = (d.peaks.length ? "" : "No on-peak hours: the battery is never held back. ") +
+          (d.shift ? `This week the tariff moves these ${d.shift} h later. ` : "") +
+          (e.base.overridden || !sameWins(d.peaks, d.def) ? "Your own hours; Reset to tariff restores the tariff's." : "These are your tariff's hours.");
+        const shifted = d.peaks.map((w) => [hhmm(w.start + d.shift * 60), hhmm(w.end + d.shift * 60)]);
+        peaks = shifted;
+        const hold = holdFrom(d.peaks, d.shift);
+        this._el("holdtrack").innerHTML = bars(hold, "hold", now, h24);
+        this._el("holdtxt").textContent = hold.length ? "Plan: " + hold.map(([x, y]) => `${fmtHHMM(x, h24)}–${fmtHHMM(y, h24)}`).join(", ") : "none";
+      }
+      this._el("peakwarn").classList.toggle("show", overlapsPeak(d, peaks));
       for (const o of this._b.querySelectorAll("output[data-out]")) {
         const k = o.getAttribute("data-out");
         o.textContent = d[k] + (k === "ac_charge_kw" ? " kW" : "%");
@@ -331,10 +416,18 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
     _click(e) {
       const act = e.target.closest && e.target.closest("[data-act]");
       if (!act) return;
-      const a = act.getAttribute("data-act");
+      const a = act.getAttribute("data-act"), ed = this._edit;
       if (a === "edit") { const st = this._find(); if (st) this._startEdit(st); }
       else if (a === "cancel") { this._edit = null; this._last = null; this._render(true); }
       else if (a === "save") this._save();
+      else if (ed && ed.draft.peaks && a === "addpeak") {
+        const w = newPeak(ed.draft.peaks);
+        if (w) { ed.draft.peaks = [...ed.draft.peaks, w].sort((x, y) => x.start - y.start); this._sync(); }
+      } else if (ed && ed.draft.peaks && a === "rmpeak") {
+        ed.draft.peaks = ed.draft.peaks.filter((_, i) => i !== Number(act.getAttribute("data-i"))); this._sync();
+      } else if (ed && ed.draft.peaks && a === "resetpeaks") {
+        ed.draft.peaks = ed.draft.def.map((w) => ({ ...w })); this._sync();
+      }
     }
     _input(e) {
       const k = e.target.getAttribute && e.target.getAttribute("data-key");
@@ -342,14 +435,31 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
       this._edit.draft[k] = Number(e.target.value);
       this._sync();
     }
+    /** The window a handle or bar belongs to: [get, set, lo, hi]. */
+    _target(id) {
+      const d = this._edit.draft;
+      if (id === "c") return { win: { start: d.start, end: d.end }, lo: 0, hi: DAY, set: (w) => { d.start = w.start; d.end = w.end; } };
+      const i = Number(id.slice(1)), [lo, hi] = bounds(d.peaks, i);
+      return { win: d.peaks[i], lo, hi, set: (w) => { d.peaks[i] = w; } };
+    }
     _pointerDown(e) {
       const t = e.target.closest && e.target.closest("[data-drag]");
       if (!t || !this._edit || this._edit.busy) return;
       e.preventDefault();
-      const track = this._el("track"), rect = track.getBoundingClientRect(), mode = t.getAttribute("data-drag");
+      let id = t.getAttribute("data-win"), mode = t.getAttribute("data-drag");
+      const track = t.closest(".track"), rect = track.getBoundingClientRect(), x0 = e.clientX;
       const at = (ev) => ((ev.clientX - rect.left) / rect.width) * DAY;
-      const grab = mode === "move" ? at(e) - this._edit.draft.start : 0;
-      const move = (ev) => { this._edit.draft = dragTo(this._edit.draft, mode, at(ev), grab); this._sync(); };
+      // two touching windows stack their handles: the direction of the drag says which one you meant
+      let pair = touching(this._edit.draft.peaks, id, mode);
+      let grab = mode === "move" ? at(e) - this._target(id).win.start : 0;
+      const move = (ev) => {
+        if (pair) {
+          if (Math.abs(ev.clientX - x0) < 3) return;
+          [id, mode] = ev.clientX < x0 ? pair.end : pair.start;
+          pair = null;
+        }
+        const g = this._target(id); g.set(dragWin(g.win, mode, at(ev), grab, g.lo, g.hi)); this._sync();
+      };
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
       window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
     }
@@ -358,8 +468,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
       const dir = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
       if (!t || !dir || !this._edit) return;
       e.preventDefault();
-      const mode = t.getAttribute("data-drag"), d = this._edit.draft, by = (e.shiftKey ? 60 : STEP) * dir;
-      this._edit.draft = dragTo(d, mode, (mode === "end" ? d.end : d.start) + by, 0);
+      const mode = t.getAttribute("data-drag"), g = this._target(t.getAttribute("data-win")), by = (e.shiftKey ? 60 : STEP) * dir;
+      g.set(dragWin(g.win, mode, (mode === "end" ? g.win.end : g.win.start) + by, 0, g.lo, g.hi));
       this._sync();
     }
     async _save() {
@@ -388,4 +498,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
     description: "24-hour view of today's peak, hold and charge windows, with an Edit button for the charge window and limits (EG4 Local TOU Manager)." });
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { toMin, pct, renderTimeline, nowMinutes, esc, STYLE, resolveH24, fmtTime, fmtHHMM, tickLabel, snap, draftFrom, dragTo, changes, overlapsPeak, renderEditor, hhmm };
+if (typeof module !== "undefined" && module.exports) module.exports = { toMin, pct, renderTimeline, nowMinutes, esc, STYLE, resolveH24, fmtTime, fmtHHMM, tickLabel, snap, draftFrom, dragTo, dragWin, touching, bounds, newPeak, holdFrom, changes, overlapsPeak, renderEditor, hhmm };

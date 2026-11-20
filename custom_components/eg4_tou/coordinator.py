@@ -16,11 +16,11 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_COUNTRY, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT, DOMAIN,
-    OPT_AC_KW, OPT_CHARGE_END, OPT_CHARGE_START, OPT_DRY_RUN, OPT_ENABLED,
+    OPT_AC_KW, OPT_CHARGE_END, OPT_CHARGE_START, OPT_DRY_RUN, OPT_ENABLED, OPT_PEAKS,
     OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, SCAN_INTERVAL_MIN,
 )
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError, WriteRefused, unpack_time
-from .planner import PRESETS, Plan, Settings, build_plan, tariff_from_custom, week_schedule
+from .planner import PRESETS, Plan, Settings, build_plan, peak_edit_info, tariff_from_custom, tariff_with_overrides, week_schedule
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ class TouData:
     week: list[dict[str, Any]] = field(default_factory=list)
     facts: dict[str, Any] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
+    peak_edit: dict[str, Any] = field(default_factory=dict)
 
 
 def settings_from_options(o: Mapping[str, Any]) -> Settings:
@@ -58,7 +59,8 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         self.entry = entry
         d = entry.data
         self.client = Eg4Modbus(ModbusConfig(d[CONF_HOST], d.get(CONF_PORT, 502), d.get(CONF_UNIT, 1)))
-        self.tariff = tariff_from_custom(d[CONF_CUSTOM]) if d[CONF_TARIFF] == "custom" else PRESETS[d[CONF_TARIFF]]
+        self.base_tariff = tariff_from_custom(d[CONF_CUSTOM]) if d[CONF_TARIFF] == "custom" else PRESETS[d[CONF_TARIFF]]
+        self.tariff = tariff_with_overrides(self.base_tariff, entry.options.get(OPT_PEAKS, {}))
         self._holidays: holidays.HolidayBase | None = None  # built off the event loop in async_load_holidays()
         self._last_write = "never"
 
@@ -105,6 +107,8 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
             raise UpdateFailed(translation_domain=DOMAIN, translation_key="read_failed",
                                translation_placeholders={"error": str(exc)}) from exc
 
+        overrides = self.entry.options.get(OPT_PEAKS, {})
+        self.tariff = tariff_with_overrides(self.base_tariff, overrides)   # the card can change these at any time
         today = dt_util.now().date()
         offpeak, _ = self._day_info(today)
         plan = build_plan(today, self.tariff, settings_from_options(self.entry.options),
@@ -125,7 +129,8 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         facts = {"mode": mode, "out_of_sync": len(pending), "start_soc": plan.registers[160],
                  "end_soc": plan.registers[161], "ac_kw": plan.registers[66] / 10}
         week = week_schedule(today, self.tariff, settings, self._day_info)
-        return TouData(current, plan, pending, mode, self._last_write, peaks, peak_list, week, facts)
+        return TouData(current, plan, pending, mode, self._last_write, peaks, peak_list, week, facts,
+                       peak_edit=peak_edit_info(today, self.tariff, self.base_tariff, overrides))
 
     async def _apply(self, pending: list[tuple[int, int, int | None]]) -> str:
         done: list[int] = []

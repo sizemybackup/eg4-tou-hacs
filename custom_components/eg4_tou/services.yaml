@@ -38,3 +38,8 @@ update_settings:
       selector:
         config_entry:
           integration: eg4_tou
+    peaks:
+      advanced: true
+      example: '{"winter": [["07:00", "11:00"], ["17:00", "21:00"]]}'
+      selector:
+        object:

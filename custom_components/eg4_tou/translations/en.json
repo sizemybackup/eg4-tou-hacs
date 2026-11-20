@@ -263,12 +263,24 @@
     },
     "entry_not_found": {
       "message": "EG4 Local TOU Manager is not set up, or several are and no entry_id was given."
+    },
+    "unknown_season": {
+      "message": "This tariff has no season called {season}."
+    },
+    "too_many_peaks": {
+      "message": "At most 2 on-peak windows per day are supported."
+    },
+    "peak_order": {
+      "message": "Each on-peak window must end after it starts, on the same day."
+    },
+    "peak_overlap": {
+      "message": "On-peak windows must not overlap."
     }
   },
   "services": {
     "update_settings": {
       "name": "Update settings",
-      "description": "Change the overnight charge window, charge limits and AC charge power in one step. Used by the timeline card's Edit button.",
+      "description": "Change the on-peak windows, overnight charge window, charge limits and AC charge power in one step. Used by the timeline card's Edit button.",
       "fields": {
         "charge_start": {
           "name": "Charge start",
@@ -297,6 +309,10 @@
         "entry_id": {
           "name": "Entry",
           "description": "Only needed if more than one EG4 TOU Manager is set up."
+        },
+        "peaks": {
+          "name": "On-peak windows",
+          "description": "Per season, the on-peak windows as a list of [start, end] pairs (at most 2, not overlapping). Use null for a season to go back to the tariff's own windows."
         }
       }
     }

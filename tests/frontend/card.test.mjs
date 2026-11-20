@@ -136,3 +136,70 @@ test("editor markup: handles, expanders, sliders, active profile, Save disabled 
   const h2 = T.renderEditor({ ...base, end_soc_winter: 60 }, base, { model, now: 600, h24: false, profile: "summer" });
   assert.ok(!h2.includes('data-act="save" disabled'));
 });
+
+// ---- editable on-peak windows ---------------------------------------------------------------
+const pe = { season: "winter", peaks: [["07:00", "11:00"], ["17:00", "21:00"]], default: [["07:00", "11:00"], ["17:00", "21:00"]],
+  overridden: false, shift_hours: 0, max_windows: 2 };
+
+test("draft carries the peak windows; no peak_edit means no peak editing", () => {
+  const d = T.draftFrom(settings, pe);
+  assert.deepEqual(d.peaks, [{ start: 420, end: 660 }, { start: 1020, end: 1260 }]);
+  assert.equal(d.season, "winter");
+  assert.equal(T.draftFrom(settings, null).peaks, null);
+});
+
+test("a peak window cannot cross its neighbour or leave the day, and keeps 15 minutes", () => {
+  const d = T.draftFrom(settings, pe);
+  const [lo0, hi0] = T.bounds(d.peaks, 0), [lo1, hi1] = T.bounds(d.peaks, 1);
+  assert.deepEqual([lo0, hi0, lo1, hi1], [0, 1020, 660, 1440]);
+  assert.equal(T.dragWin(d.peaks[0], "end", 1300, 0, lo0, hi0).end, 1020);        // stops at window 2
+  assert.equal(T.dragWin(d.peaks[1], "start", 100, 0, lo1, hi1).start, 660);      // stops at window 1
+  assert.equal(T.dragWin(d.peaks[0], "start", 700, 0, lo0, hi0).start, 645);      // 15 min left
+  const mv = T.dragWin(d.peaks[0], "move", 2000, 0, lo0, hi0);                    // whole window slides to the neighbour
+  assert.deepEqual([mv.start, mv.end], [780, 1020]);
+});
+
+test("adding a window picks the biggest gap; none when full or no room", () => {
+  assert.deepEqual(T.newPeak([]), { start: 690, end: 750 });                       // centred hour in the day
+  const w = T.newPeak([{ start: 420, end: 660 }]);                                // gap 11:00-24:00 is bigger than 0-7:00
+  assert.ok(w.start >= 660 && w.end - w.start === 60);
+  assert.equal(T.newPeak([{ start: 0, end: 1440 }]), null);
+  assert.equal(T.newPeak([{ start: 0, end: 600 }, { start: 610, end: 1440 }]), null);   // 10 min gap
+});
+
+test("hold windows follow the peaks, including the daylight-saving shift", () => {
+  const d = T.draftFrom(settings, pe);
+  assert.deepEqual(T.holdFrom(d.peaks, 0), [["00:00", "07:00"], ["11:00", "17:00"], ["21:00", "23:59"]]);
+  assert.deepEqual(T.holdFrom(d.peaks, 1), [["00:00", "08:00"], ["12:00", "18:00"], ["22:00", "23:59"]]);
+  assert.deepEqual(T.holdFrom([], 0), [["00:00", "23:59"]]);
+  assert.deepEqual(T.holdFrom([{ start: 0, end: 1440 }], 0), []);                 // peak all day: nothing to hold
+});
+
+test("peak changes are sent per season; back to the tariff's own windows sends null", () => {
+  const base = T.draftFrom(settings, pe);
+  const draft = { ...base, peaks: [{ start: 390, end: 570 }, { ...base.peaks[1] }] };
+  assert.deepEqual(T.changes(draft, base), { peaks: { winter: [["06:30", "09:30"], ["17:00", "21:00"]] } });
+  assert.deepEqual(T.changes({ ...base, peaks: base.peaks.map((w) => ({ ...w })) }, base), {});
+  const over = T.draftFrom(settings, { ...pe, peaks: [["06:30", "09:30"]], overridden: true });
+  assert.deepEqual(T.changes({ ...over, peaks: over.def.map((w) => ({ ...w })) }, over), { peaks: { winter: null } });
+  assert.deepEqual(T.changes({ ...base, peaks: [] }, base), { peaks: { winter: [] } });
+});
+
+test("editor shows an editable peak lane and a hold preview when peak_edit is known", () => {
+  const d = T.draftFrom(settings, pe);
+  const h = T.renderEditor(d, d, { model, now: 600, h24: true, profile: "winter" });
+  assert.match(h, /On-peak hours \(winter\)/); assert.match(h, /data-win="p0"/); assert.match(h, /data-win="p1"/);
+  assert.match(h, /data-act="addpeak"/); assert.match(h, /data-act="resetpeaks"/); assert.match(h, /data-el="holdtrack"/);
+  assert.equal((h.match(/data-drag="start"/g) || []).length, 3);                  // two peak windows + the charge window
+  const old = T.renderEditor(T.draftFrom(settings, null), T.draftFrom(settings, null), { model, now: 600, h24: true, profile: "winter" });
+  assert.ok(!old.includes("addpeak"));
+});
+
+test("stacked handles of touching windows are told apart by drag direction", () => {
+  const peaks = [{ start: 420, end: 1020 }, { start: 1020, end: 1260 }];
+  assert.deepEqual(T.touching(peaks, "p0", "end"), { end: ["p0", "end"], start: ["p1", "start"] });
+  assert.deepEqual(T.touching(peaks, "p1", "start"), { end: ["p0", "end"], start: ["p1", "start"] });
+  assert.equal(T.touching(peaks, "p0", "start"), null);
+  assert.equal(T.touching([{ start: 420, end: 660 }, { start: 1020, end: 1260 }], "p0", "end"), null);
+  assert.equal(T.touching(peaks, "c", "end"), null); assert.equal(T.touching(null, "p0", "end"), null);
+});

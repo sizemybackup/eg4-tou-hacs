@@ -853,3 +853,71 @@ async def test_update_settings_is_admin_only(hass: HomeAssistant, gateway, hass_
         await hass.services.async_call(DOMAIN, "update_settings", {"entry_id": e.entry_id, "end_soc_winter": 60},
                                        blocking=True, context=Context(user_id=hass_read_only_user.id))
     assert e.options["end_soc_winter"] == 70
+
+
+# ---- editable on-peak windows (peak overrides) -------------------------------------------------
+from datetime import date as _date  # noqa: E402
+from custom_components.eg4_tou.planner import BGE_RL, peak_edit_info, tariff_with_overrides  # noqa: E402
+from custom_components.eg4_tou.services import merge_peaks  # noqa: E402
+
+WINTER = [["07:00", "11:00"], ["17:00", "21:00"]]
+
+
+def test_tariff_overrides_replace_only_the_named_season_and_ignore_bad_ones():
+    t = tariff_with_overrides(BGE_RL, {"winter": [["18:00", "22:00"]], "summer": [["20:00", "10:00"]], "spring": [["01:00", "02:00"]]})
+    assert t.peaks["winter"] == (("18:00", "22:00"),)
+    assert t.peaks["summer"] == BGE_RL.peaks["summer"]      # invalid window ignored
+    assert "spring" not in t.peaks                           # unknown season ignored
+    assert t.holiday_fn is BGE_RL.holiday_fn and t.shift_fn is BGE_RL.shift_fn
+    assert tariff_with_overrides(BGE_RL, {}) .peaks == BGE_RL.peaks
+
+
+def test_peak_edit_info_reports_season_default_override_and_shift():
+    t = tariff_with_overrides(BGE_RL, {"winter": [["18:00", "22:00"]]})
+    info = peak_edit_info(_date(2026, 11, 20), t, BGE_RL, {"winter": [["18:00", "22:00"]]})
+    assert info == {"season": "winter", "peaks": [["18:00", "22:00"]], "default": WINTER, "overridden": True,
+                    "shift_hours": 0, "max_windows": 2}
+    assert peak_edit_info(_date(2026, 3, 16), BGE_RL, BGE_RL, {})["shift_hours"] == 1     # shift week
+    assert peak_edit_info(_date(2026, 7, 15), BGE_RL, BGE_RL, {})["overridden"] is False
+
+
+def test_merge_peaks_rules():
+    seasons = {"summer": BGE_RL.peaks["summer"], "winter": BGE_RL.peaks["winter"]}
+    assert merge_peaks({}, {"winter": [["17:00", "21:00"], ["06:00", "10:00"]]}, seasons) == {"winter": [["06:00", "10:00"], ["17:00", "21:00"]]}
+    assert merge_peaks({"winter": [["06:00", "10:00"]]}, {"winter": None}, seasons) == {}
+    assert merge_peaks({"summer": [["09:00", "19:00"]]}, {"winter": WINTER}, seasons) == {"summer": [["09:00", "19:00"]]}   # same as tariff: no override
+    assert merge_peaks({}, {"winter": []}, seasons) == {"winter": []}                                                   # no on-peak at all
+    for bad, key in (([["10:00", "10:00"]], "peak_order"), ([["06:00", "10:00"], ["09:00", "12:00"]], "peak_overlap"),
+                     ([["01:00", "02:00"], ["03:00", "04:00"], ["05:00", "06:00"]], "too_many_peaks")):
+        with pytest.raises(ServiceValidationError) as e:
+            merge_peaks({}, {"winter": bad}, seasons)
+        assert e.value.translation_key == key
+    with pytest.raises(ServiceValidationError):
+        merge_peaks({}, {"spring": WINTER}, seasons)
+
+
+async def test_card_can_edit_peaks_and_the_plan_follows(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway, enabled=True, dry_run=False)
+    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
+    season = a["peak_edit"]["season"]
+    assert a["peak_edit"]["peaks"] == a["peak_edit"]["default"] and not a["peak_edit"]["overridden"]
+    await _call(hass, e, peaks={season: [["06:30", "09:30"]]})
+    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
+    assert a["peak_edit"]["overridden"] and a["peak_edit"]["peaks"] == [["06:30", "09:30"]]
+    if a["timeline"]["peaks"]:                                   # a weekday: hold windows are the complement
+        assert a["timeline"]["peaks"] == [["06:30", "09:30"]]
+        assert gateway.regs.get(152, 0) == pack_time("00:00") and gateway.regs[153] == pack_time("06:30")
+    await _call(hass, e, peaks={season: None})                   # back to the tariff
+    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
+    assert not a["peak_edit"]["overridden"] and a["peak_edit"]["peaks"] == a["peak_edit"]["default"]
+    with pytest.raises(ServiceValidationError):
+        await _call(hass, e, peaks={season: [["10:00", "09:00"]]})
+
+
+async def test_configure_clears_peak_overrides(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway)
+    await _call(hass, e, peaks={"winter": [["06:30", "09:30"]]})
+    assert e.options["peak_overrides"]
+    r = await hass.config_entries.options.async_init(e.entry_id)
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True, "offpeak_holidays": True})
+    assert r["type"] == "create_entry" and e.options["peak_overrides"] == {}

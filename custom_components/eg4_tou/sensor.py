@@ -31,7 +31,7 @@ class ProfileSensor(TouEntity, SensorEntity):
     # in the history database on every update, and the recorder drops attributes over 16 KB anyway.
     # peak_windows stays recorded: it is short and useful in history.
     _unrecorded_attributes = frozenset(
-        {"rules", "timeline", "week", "facts", "settings", "entry_id", *(f"reg_{r}" for r in WRITE_LIMITS)})
+        {"rules", "timeline", "week", "facts", "settings", "entry_id", "peak_edit", *(f"reg_{r}" for r in WRITE_LIMITS)})
 
     def __init__(self, c: TouCoordinator) -> None:
         super().__init__(c, "profile", "Active profile")
@@ -48,6 +48,7 @@ class ProfileSensor(TouEntity, SensorEntity):
                 "timeline": timeline(d.plan, d.current, d.peak_list),
                 "week": d.week,
                 "facts": d.facts,
+                "peak_edit": d.peak_edit,
                 "entry_id": self.coordinator.entry.entry_id,
                 "settings": {k: self.coordinator.entry.options[k] for k in EDITABLE},
                 **{f"reg_{r}": self.coordinator.describe(r, v) for r, v in d.plan.registers.items()}}

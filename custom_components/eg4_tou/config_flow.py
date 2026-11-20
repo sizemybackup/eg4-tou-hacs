@@ -19,7 +19,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
 from .const import (CONF_COUNTRY, CONF_CREATE_DASHBOARD, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
-                    DOMAIN, OPT_DRY_RUN, OPT_ENABLED)
+                    DOMAIN, OPT_DRY_RUN, OPT_ENABLED, OPT_PEAKS)
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
 from .scanner import Found, async_scan, is_local_address
 from .planner import MAX_PEAKS_PER_DAY, PRESETS, tariff_from_custom, validate_peaks, winter_dates
@@ -382,4 +382,4 @@ class Eg4TouOptionsFlow(_TariffSteps, config_entries.OptionsFlow):
             data[CONF_CUSTOM] = custom
         self.hass.config_entries.async_update_entry(self.config_entry, data=data)
         self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
-        return self.async_create_entry(data=dict(self.config_entry.options))
+        return self.async_create_entry(data={**self.config_entry.options, OPT_PEAKS: {}})  # a new tariff drops card-made peak edits

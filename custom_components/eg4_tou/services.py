@@ -15,9 +15,11 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_register_admin_service
 
+from .planner import validate_peaks
+
 from .const import (
     AC_KW_RANGE, AC_KW_STEP, DOMAIN, OPT_AC_KW, OPT_CHARGE_END, OPT_CHARGE_START,
-    OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, SOC_RANGE,
+    OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, OPT_PEAKS, SOC_RANGE,
 )
 
 SERVICE_UPDATE_SETTINGS = "update_settings"
@@ -39,7 +41,31 @@ SCHEMA = vol.Schema({
     vol.Optional(OPT_CHARGE_END): _hhmm,
     **{vol.Optional(k): vol.All(vol.Coerce(int), vol.Range(*SOC_RANGE)) for k in _SOC_KEYS},
     vol.Optional(OPT_AC_KW): vol.All(vol.Coerce(float), vol.Range(*AC_KW_RANGE)),
+    # {season: [[start, end], ...]} sets that season's on-peak windows; {season: null} goes back to the tariff's own
+    vol.Optional("peaks"): {cv.string: vol.Any(None, [vol.All([_hhmm], vol.Length(2, 2))])},
 })
+
+
+def merge_peaks(current: Any, patch: dict[str, Any], seasons: dict[str, Any]) -> dict[str, Any]:
+    """The stored peak overrides after applying `patch`. `seasons` maps each season name to the
+    tariff's own windows; a season set back to them (or to null) stops being an override."""
+    out = {k: [list(w) for w in v] for k, v in (current or {}).items()}
+    for season, windows in patch.items():
+        if season not in seasons:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_season",
+                                         translation_placeholders={"season": season})
+        if windows is None:
+            out.pop(season, None)
+            continue
+        wl = sorted((str(a), str(b)) for a, b in windows)
+        err = validate_peaks(wl)
+        if err:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key=err)
+        if wl == sorted(tuple(w) for w in seasons[season]):
+            out.pop(season, None)
+        else:
+            out[season] = [list(w) for w in wl]
+    return out
 
 
 def validate(current: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
@@ -69,7 +95,12 @@ async def _update_settings(call: ServiceCall) -> None:
     entry = _entry(call.hass, data.pop(ATTR_ENTRY_ID, None))
     if not data:
         return
+    peaks = data.pop("peaks", None)
     merged = validate(dict(entry.options), data)
+    if peaks is not None:
+        c = entry.runtime_data
+        merged[OPT_PEAKS] = merge_peaks(entry.options.get(OPT_PEAKS), peaks,
+                                        {s.name: c.base_tariff.peaks.get(s.name, ()) for s in c.base_tariff.seasons})
     if merged != dict(entry.options):
         call.hass.config_entries.async_update_entry(entry, options=merged)
 

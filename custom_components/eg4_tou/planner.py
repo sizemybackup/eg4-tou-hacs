@@ -5,7 +5,7 @@ video. The planner only decides; the coordinator reads, diffs and writes.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -67,6 +67,28 @@ class Tariff:
         if self.shift_hours and season == self.shift_season and self.in_shift(day):
             windows = tuple((_shift(a, self.shift_hours), _shift(b, self.shift_hours)) for a, b in windows)
         return windows
+
+
+def tariff_with_overrides(base: Tariff, overrides: Mapping[str, Any]) -> Tariff:
+    """The tariff with the user's own on-peak windows for some seasons (everything else unchanged:
+    seasons, holidays, the daylight-saving shift). Unknown seasons and bad windows are ignored."""
+    peaks = dict(base.peaks)
+    known = {s.name for s in base.seasons}
+    for season, windows in (overrides or {}).items():
+        wl = [(str(a), str(b)) for a, b in windows]
+        if season in known and validate_peaks(wl) is None:
+            peaks[season] = tuple(sorted(wl))
+    return replace(base, peaks=peaks)
+
+
+def peak_edit_info(day: date, tariff: Tariff, base: Tariff, overrides: Mapping[str, Any]) -> dict[str, Any]:
+    """What the timeline card's editor needs for today's season: the editable (unshifted) windows,
+    the tariff's own, and how far today's windows are shifted by the tariff (daylight-saving weeks)."""
+    season = tariff.season_for(day)
+    shifted = tariff.shift_hours if tariff.shift_hours and season == tariff.shift_season and tariff.in_shift(day) else 0
+    return {"season": season, "peaks": [list(p) for p in tariff.peaks.get(season, ())],
+            "default": [list(p) for p in base.peaks.get(season, ())],
+            "overridden": season in (overrides or {}), "shift_hours": shifted, "max_windows": MAX_PEAKS_PER_DAY}
 
 
 def _shift(hhmm: str, hours: int) -> str:

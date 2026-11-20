@@ -55,7 +55,7 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
 
 
 async def _options_updated(hass: "HomeAssistant", entry: "ConfigEntry") -> None:
-    await entry.runtime_data.async_request_refresh()
+    await entry.runtime_data.async_refresh()   # now, not debounced: a second quick save must show up too
 
 
 async def async_unload_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
