@@ -6,8 +6,13 @@ from typing import TYPE_CHECKING
 
 # Imported at module level on purpose: Home Assistant's loader imports this module in a worker
 # thread, so the `holidays` library's file reads at import time do not block the event loop.
+from homeassistant.helpers import config_validation as cv
+
 from .coordinator import TouCoordinator
 from .const import DEFAULT_OPTIONS, DOMAIN, PLATFORMS
+
+# Set up from the UI only; any `eg4_tou:` key in configuration.yaml is rejected with a clear message.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 CARD_FILES = ("eg4-tou-timeline-card.js", "eg4-tou-rules-card.js")

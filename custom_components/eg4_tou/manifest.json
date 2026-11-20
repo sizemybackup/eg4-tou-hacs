@@ -1,19 +1,13 @@
 {
   "domain": "eg4_tou",
   "name": "EG4 Local TOU Manager",
-  "codeowners": [],
+  "codeowners": ["@mecindustriesllc"],
   "config_flow": true,
+  "dependencies": ["frontend", "http", "network"],
   "documentation": "https://github.com/sizemybackup/eg4-tou-hacs",
   "integration_type": "service",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/sizemybackup/eg4-tou-hacs/issues",
-  "requirements": [
-    "holidays>=0.40"
-  ],
-  "version": "0.7.2",
-  "dependencies": [
-    "network",
-    "http",
-    "frontend"
-  ]
+  "requirements": ["holidays>=0.40"],
+  "version": "0.7.3"
 }
