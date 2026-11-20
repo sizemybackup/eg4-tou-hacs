@@ -257,6 +257,48 @@
   "exceptions": {
     "read_failed": {
       "message": "Could not read the inverter through the Modbus gateway: {error}"
+    },
+    "charge_window_order": {
+      "message": "The overnight charge window must end after it starts (start {start}, end {end})."
+    },
+    "entry_not_found": {
+      "message": "EG4 Local TOU Manager is not set up, or several are and no entry_id was given."
+    }
+  },
+  "services": {
+    "update_settings": {
+      "name": "Update settings",
+      "description": "Change the overnight charge window, charge limits and AC charge power in one step. Used by the timeline card's Edit button.",
+      "fields": {
+        "charge_start": {
+          "name": "Charge start",
+          "description": "When the overnight AC charge window opens (HH:MM)."
+        },
+        "charge_end": {
+          "name": "Charge end",
+          "description": "When it closes. Must be after the start."
+        },
+        "end_soc_summer": {
+          "name": "Charge limit, summer weekday",
+          "description": "Battery % at which overnight charging stops."
+        },
+        "end_soc_winter": {
+          "name": "Charge limit, winter weekday",
+          "description": "Battery % at which overnight charging stops."
+        },
+        "end_soc_offpeak": {
+          "name": "Charge limit, weekend / holiday",
+          "description": "Battery % at which overnight charging stops."
+        },
+        "ac_charge_kw": {
+          "name": "AC charge power",
+          "description": "Grid charging power in kW (0.5 kW steps)."
+        },
+        "entry_id": {
+          "name": "Entry",
+          "description": "Only needed if more than one EG4 TOU Manager is set up."
+        }
+      }
     }
   }
 }

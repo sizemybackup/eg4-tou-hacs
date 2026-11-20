@@ -1,6 +1,8 @@
 name: Release
 
 # Push a tag like v0.7.3 and this publishes the GitHub Release that HACS lists.
+# A tag with a suffix (v0.11.0-dev.1, v0.11.0-rc.1) is published as a pre-release: HACS only offers
+# it to people who turn on "Show beta versions" for this repository.
 on:
   push:
     tags: ["v*"]
@@ -26,4 +28,5 @@ jobs:
           # checkout stores the tag as lightweight; fetch the annotated tag to get its message
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           notes="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "${notes:-Release $GITHUB_REF_NAME}" --verify-tag
+          pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "${notes:-Release $GITHUB_REF_NAME}" --verify-tag $pre

@@ -777,3 +777,79 @@ async def test_dashboard_removal_failure_is_only_logged(hass: HomeAssistant, cap
     assert await dash.async_create_dashboard(hass) == dash.EXISTS
     await dash.async_remove_dashboard(hass)
     assert dash._find_item(coll) is None
+
+
+# ---- update_settings service (the timeline card's Edit > Save) ---------------------------------
+from homeassistant.exceptions import ServiceValidationError, Unauthorized  # noqa: E402
+from homeassistant.core import Context  # noqa: E402
+
+
+async def _call(hass, entry=None, **data):
+    if entry is not None:
+        data.setdefault("entry_id", entry.entry_id)
+    await hass.services.async_call(DOMAIN, "update_settings", data, blocking=True)
+    await hass.async_block_till_done()
+
+
+async def test_sensor_publishes_settings_and_entry_id_for_the_card(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway)
+    a = hass.states.get("sensor.eg4_tou_active_profile").attributes
+    assert a["entry_id"] == e.entry_id
+    assert a["settings"] == {"charge_start": "01:00", "charge_end": "05:00", "end_soc_summer": 80,
+                             "end_soc_winter": 70, "end_soc_offpeak": 50, "ac_charge_kw": 5.0}
+
+
+async def test_update_settings_changes_everything_at_once_and_replans(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway, enabled=True, dry_run=False)
+    await _call(hass, e, charge_start="02:30", charge_end="06:15:00", end_soc_winter=65, end_soc_summer=75,
+                end_soc_offpeak=45, ac_charge_kw=7.5)
+    o = e.options
+    assert (o["charge_start"], o["charge_end"]) == ("02:30", "06:15")
+    assert (o["end_soc_winter"], o["end_soc_summer"], o["end_soc_offpeak"], o["ac_charge_kw"]) == (65, 75, 45, 7.5)
+    assert gateway.regs[68] == pack_time("02:30") and gateway.regs[69] == pack_time("06:15")
+    assert gateway.regs[66] == 75
+    s = hass.states.get("sensor.eg4_tou_active_profile").attributes["settings"]
+    assert s["charge_start"] == "02:30" and s["ac_charge_kw"] == 7.5
+
+
+async def test_update_settings_partial_and_empty_leave_the_rest_alone(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway)
+    before = dict(e.options)
+    await _call(hass, e)                                   # nothing to change
+    assert dict(e.options) == before
+    await _call(hass, e, end_soc_winter=55)
+    assert dict(e.options) == {**before, "end_soc_winter": 55}
+
+
+async def test_update_settings_rejects_a_bad_window_and_changes_nothing(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway)
+    before = dict(e.options)
+    with pytest.raises(ServiceValidationError):
+        await _call(hass, e, charge_start="06:00", charge_end="05:00")
+    with pytest.raises(ServiceValidationError):            # one end moved past the other stored one
+        await _call(hass, e, charge_start="05:30")
+    assert dict(e.options) == before
+
+
+@pytest.mark.parametrize("bad", [{"charge_start": "25:00"}, {"charge_end": "noon"}, {"end_soc_winter": 10},
+                                 {"end_soc_summer": 101}, {"ac_charge_kw": 11}])
+async def test_update_settings_validates_ranges(hass: HomeAssistant, gateway, bad):
+    e = await _setup(hass, gateway)
+    with pytest.raises(Exception):
+        await _call(hass, e, **bad)
+
+
+async def test_update_settings_finds_the_only_entry_and_rejects_unknown_ones(hass: HomeAssistant, gateway):
+    e = await _setup(hass, gateway)
+    await _call(hass, end_soc_offpeak=40)                  # no entry_id: the single entry
+    assert e.options["end_soc_offpeak"] == 40
+    with pytest.raises(ServiceValidationError):
+        await _call(hass, entry_id="nope", end_soc_offpeak=41)
+
+
+async def test_update_settings_is_admin_only(hass: HomeAssistant, gateway, hass_read_only_user):
+    e = await _setup(hass, gateway)
+    with pytest.raises(Unauthorized):
+        await hass.services.async_call(DOMAIN, "update_settings", {"entry_id": e.entry_id, "end_soc_winter": 60},
+                                       blocking=True, context=Context(user_id=hass_read_only_user.id))
+    assert e.options["end_soc_winter"] == 70

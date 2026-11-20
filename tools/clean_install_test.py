@@ -6,7 +6,7 @@ custom_components/eg4_tou in a fresh config folder), then walks the new-user jou
 Docker container and prints a PASS/FAIL table. Nothing from your own working tree is used.
 
   uv run --with playwright python tools/clean_install_test.py                      # latest release, HA stable
-  uv run --with playwright python tools/clean_install_test.py --ref v0.10.0 \
+  uv run --with playwright python tools/clean_install_test.py --ref v0.11.0-dev.1 \
         --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4                  # oldest supported HA
   uv run --with playwright python tools/clean_install_test.py --local                   # the working tree, before tagging
   python3 tools/clean_install_test.py --no-browser                                 # skip the dashboard checks
@@ -101,10 +101,10 @@ class HA:
             time.sleep(3)
         return False
 
-    def onboard(self) -> None:
+    def onboard(self, username: str = "test", password: str | None = None) -> None:
         cid = self.base + "/"
-        _, u = self.call("POST", "/api/onboarding/users", {"client_id": cid, "name": "Test", "username": "test",
-                                                           "password": "test-" + str(int(time.time())), "language": "en"}, auth=False)
+        _, u = self.call("POST", "/api/onboarding/users", {"client_id": cid, "name": username.title(), "username": username,
+                                                           "password": password or "test-" + str(int(time.time())), "language": "en"}, auth=False)
         _, t = self.call("POST", "/auth/token", {"grant_type": "authorization_code", "code": u["auth_code"], "client_id": cid},
                          form=True, auth=False)
         self.access, self.refresh, self.expires = t["access_token"], t["refresh_token"], time.time() + t["expires_in"]
@@ -172,7 +172,7 @@ def check_layout(pkg: Path, ref: str) -> None:
     record("manifest has the keys HACS/hassfest require", need <= set(man), "missing: " + ", ".join(sorted(need - set(man))) if need - set(man) else f"v{man['version']}")
     record("manifest version matches the release tag", man["version"] == ref.lstrip("v"), f"manifest {man['version']} vs tag {ref}")
     files = ["__init__.py", "config_flow.py", "translations/en.json", "frontend/eg4-tou-timeline-card.js",
-             "frontend/eg4-tou-rules-card.js", "dashboard.yaml", "brand/icon.png", "brand/dark_icon.png", "brand/logo.png"]
+             "frontend/eg4-tou-rules-card.js", "dashboard.yaml", "services.yaml", "brand/icon.png", "brand/dark_icon.png", "brand/logo.png"]
     miss = [f for f in files if not (pkg / f).exists()]
     record("all runtime files are present in the archive", not miss, ", ".join(miss) or f"{sum(1 for _ in pkg.rglob('*') if _.is_file())} files")
     record("integration does not ship tests or secrets", not any(p.suffix in (".env", ".pem", ".key") or p.name.startswith("test_") for p in pkg.rglob("*")))
@@ -238,6 +238,21 @@ def check_entities(st: dict) -> None:
            f"profile={prof.get('state')}")
     record("controller is in read-only mode", st.get("sensor.eg4_tou_controller_status", {}).get("state") == "read_only" and
            st.get("switch.eg4_tou_read_only_mode", {}).get("state") == "on", st.get("sensor.eg4_tou_controller_status", {}).get("state", "?"))
+
+
+def check_update_service(ha: HA) -> None:
+    """The timeline card's Save uses eg4_tou.update_settings: it must apply, validate and be admin-callable."""
+    s, _ = ha.call("POST", "/api/services/eg4_tou/update_settings", {"end_soc_offpeak": 45})
+    time.sleep(2)
+    v = ha.states().get("number.eg4_tou_charge_limit_weekend_holiday", {}).get("state")
+    record("the update_settings action changes a setting", s == 200 and v in ("45", "45.0"), f"http {s}, state {v}")
+    s, _ = ha.call("POST", "/api/services/eg4_tou/update_settings", {"charge_start": "06:00", "charge_end": "05:00"})
+    time.sleep(1)
+    start = ha.states().get("time.eg4_tou_charge_start", {}).get("state", "")
+    # newer Home Assistant answers 400, 2025.1.x answers 500; either way it must be refused and change nothing
+    record("update_settings refuses a charge window that ends before it starts", s >= 400 and start.startswith("01:00"),
+           f"http {s}, charge start {start}")
+    ha.call("POST", "/api/services/eg4_tou/update_settings", {"end_soc_offpeak": 50})
 
 
 def check_frontend(ha: HA, version: str) -> None:
@@ -366,6 +381,7 @@ def main() -> int:
                 if ctx.get("entry_id"):
                     st = wait_entities(ha)
                     check_entities(st)
+                    check_update_service(ha)
                     check_frontend(ha, json.loads((pkg / "manifest.json").read_text())["version"])
                     probs = our_log_problems(sh("docker", "logs", container).stdout + sh("docker", "logs", container).stderr)
                     record("no warnings or errors from the integration in the log", not probs, " | ".join(probs[:3]))

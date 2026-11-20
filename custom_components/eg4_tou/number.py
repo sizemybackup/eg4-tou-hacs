@@ -6,7 +6,7 @@ from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import OPT_AC_KW, OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER
+from .const import AC_KW_RANGE, AC_KW_STEP, OPT_AC_KW, SOC_RANGE, OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER
 from .coordinator import TouConfigEntry, TouCoordinator
 from .entity import TouEntity
 
@@ -17,10 +17,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: TouConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     c = entry.runtime_data
     async_add_entities([
-        OptionNumber(c, OPT_END_SOC_SUMMER, "Charge limit, summer weekday", 20, 100, 1, PERCENTAGE),
-        OptionNumber(c, OPT_END_SOC_WINTER, "Charge limit, winter weekday", 20, 100, 1, PERCENTAGE),
-        OptionNumber(c, OPT_END_SOC_OFFPEAK, "Charge limit, weekend / holiday", 20, 100, 1, PERCENTAGE),
-        OptionNumber(c, OPT_AC_KW, "AC charge power", 1.0, 10.0, 0.5, UnitOfPower.KILO_WATT),
+        OptionNumber(c, OPT_END_SOC_SUMMER, "Charge limit, summer weekday", *SOC_RANGE, 1, PERCENTAGE),
+        OptionNumber(c, OPT_END_SOC_WINTER, "Charge limit, winter weekday", *SOC_RANGE, 1, PERCENTAGE),
+        OptionNumber(c, OPT_END_SOC_OFFPEAK, "Charge limit, weekend / holiday", *SOC_RANGE, 1, PERCENTAGE),
+        OptionNumber(c, OPT_AC_KW, "AC charge power", *AC_KW_RANGE, AC_KW_STEP, UnitOfPower.KILO_WATT),
     ])
 
 

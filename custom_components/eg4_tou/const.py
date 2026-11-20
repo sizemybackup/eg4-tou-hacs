@@ -32,3 +32,10 @@ DEFAULT_OPTIONS = {
     OPT_END_SOC_OFFPEAK: 50,
     OPT_AC_KW: 5.0,
 }
+
+# Allowed ranges for the numeric settings (shared by the number entities and the update_settings service)
+SOC_RANGE = (20, 100)
+AC_KW_RANGE = (1.0, 10.0)
+AC_KW_STEP = 0.5
+# The settings the timeline card's Edit mode shows (and update_settings accepts)
+EDITABLE = (OPT_CHARGE_START, OPT_CHARGE_END, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, OPT_END_SOC_OFFPEAK, OPT_AC_KW)

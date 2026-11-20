@@ -1,0 +1,40 @@
+update_settings:
+  fields:
+    charge_start:
+      example: "01:00"
+      selector:
+        time:
+    charge_end:
+      example: "05:00"
+      selector:
+        time:
+    end_soc_summer:
+      selector:
+        number:
+          min: 20
+          max: 100
+          unit_of_measurement: "%"
+    end_soc_winter:
+      selector:
+        number:
+          min: 20
+          max: 100
+          unit_of_measurement: "%"
+    end_soc_offpeak:
+      selector:
+        number:
+          min: 20
+          max: 100
+          unit_of_measurement: "%"
+    ac_charge_kw:
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 0.5
+          unit_of_measurement: kW
+    entry_id:
+      advanced: true
+      selector:
+        config_entry:
+          integration: eg4_tou

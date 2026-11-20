@@ -6,9 +6,7 @@
 # been reviewed by the Home Assistant team. The CI runs the tests (coverage), strict mypy and hassfest.
 rules:
   # Bronze
-  action-setup:
-    status: exempt
-    comment: The integration registers no actions (services).
+  action-setup: done  # eg4_tou.update_settings is registered in async_setup (services.py)
   appropriate-polling: done  # every 10 minutes; schedules change at most a few times a day
   brands:
     status: done
@@ -23,9 +21,7 @@ rules:
     comment: >-
       The only requirement, holidays, is open source on PyPI. The Modbus client is part of this
       integration (modbus.py), not a separate library; core would require it on PyPI.
-  docs-actions:
-    status: exempt
-    comment: No actions.
+  docs-actions: done  # the README's entity table documents eg4_tou.update_settings
   docs-conditions:
     status: exempt
     comment: No device conditions.

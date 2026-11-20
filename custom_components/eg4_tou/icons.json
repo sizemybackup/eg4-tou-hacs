@@ -51,5 +51,10 @@
         "default": "mdi:clock-end"
       }
     }
+  },
+  "services": {
+    "update_settings": {
+      "service": "mdi:calendar-edit"
+    }
   }
 }

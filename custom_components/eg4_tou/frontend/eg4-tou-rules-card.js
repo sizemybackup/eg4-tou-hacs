@@ -34,6 +34,19 @@ function dur(min) {
   return `${v}m`;
 }
 
+/** 12 or 24 hour clock: the card's time_format wins, then your Home Assistant profile, then the browser. */
+function resolveH24(locale, cfgFormat, browserLocale) {
+  if (cfgFormat !== undefined && cfgFormat !== null && cfgFormat !== "") return Number(cfgFormat) === 24;
+  const tf = locale && locale.time_format;
+  if (tf === "24") return true;
+  if (tf === "12") return false;
+  const lang = tf === "language" && locale && locale.language ? locale.language : browserLocale;
+  try {
+    const o = new Intl.DateTimeFormat(lang || undefined, { hour: "numeric" }).resolvedOptions();
+    return o.hourCycle ? o.hourCycle === "h23" || o.hourCycle === "h24" : !o.hour12;
+  } catch (e) { return true; }
+}
+
 /** Minutes-from-today-midnight (may be >= 1440 for later days) as "5:00 PM" or "Thu 7:00 AM". */
 function labelAt(abs, week, h24) {
   const i = Math.floor(abs / DAY);
@@ -244,8 +257,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
       this._last = key;
       const model = buildModel(st.attributes, np.date);
       if (!model) { this._b.innerHTML = `<div class="msg">Waiting for the integration's next update (it refreshes every 10 minutes).</div>`; return; }
-      const lt = this._hass.locale && this._hass.locale.time_format;
-      const h24 = c.time_format ? Number(c.time_format) === 24 : lt === "24";
+      const h24 = resolveH24(this._hass.locale, c.time_format, typeof navigator !== "undefined" ? navigator.language : undefined);
       this._b.innerHTML = renderRules(model, np.min, v, { h24, capacityKwh: c.battery_capacity_kwh, floor: c.soc_floor });
     }
   }
@@ -255,4 +267,5 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" 
     description: "Season, billing window, next window, power source, grid charging and more, with live countdowns (EG4 Local TOU Manager)." });
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { renderRules, buildModel, toMin, fmtTime, dur, nextPeakChange, nextHoldFlip, chargeInfo, labelAt, STYLE };
+
+if (typeof module !== "undefined" && module.exports) module.exports = { renderRules, buildModel, toMin, fmtTime, dur, nextPeakChange, nextHoldFlip, chargeInfo, labelAt, STYLE, resolveH24 };

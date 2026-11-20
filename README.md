@@ -52,6 +52,17 @@ drawn underneath if they differ from the plan), a **Today's rules** table showin
 rule the plan, what the inverter holds now and whether they match, the list of pending
 changes, and all the controls.
 
+Times on both cards follow your Home Assistant profile (Profile, *Time format*: 12-hour or 24-hour). Set
+`time_format: 12` or `24` on a card to override that for one card.
+
+**Editing the schedule on the timeline card (administrators).** Press **Edit** on the timeline. Drag the two
+handles of the overnight charge window (or the bar, to move the whole window; steps of 15 minutes, or use the
+arrow keys on a focused handle), open the **Charge limits** and **AC charge power** expanders for the sliders, and press
+**Save**. Everything you changed is applied in one step (the `eg4_tou.update_settings` action), so the inverter never
+sees half a window. **Cancel** throws the edit away. The card warns if the charge window overlaps an on-peak
+period. On-peak hours come from your tariff and are not edited here (use **Configure**), and the hold windows
+follow them. In read-only mode a save changes the plan only; nothing is written to the inverter.
+
 To add it by hand instead (you unticked the box, or Home Assistant could not create it and told you so): Settings,
 Dashboards, Add dashboard, *New dashboard from scratch*; open it, three dots, Edit dashboard, three dots,
 **Raw configuration editor**, paste the file.
@@ -162,6 +173,7 @@ A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manag
 | `number.eg4_tou_charge_limit_weekend_holiday` | AC charge end SOC on weekends and holidays (20-100%). |
 | `number.eg4_tou_ac_charge_power` | AC charge power while grid charging (1-10 kW). |
 | `time.eg4_tou_charge_start`, `time.eg4_tou_charge_end` | The overnight AC charge window. |
+| action `eg4_tou.update_settings` | Change the charge window, the three charge limits and the AC charge power in one call (what the timeline card's Save uses). Administrators only; the window must end after it starts. |
 | `sensor.eg4_tou_active_profile` | Today's profile: summer weekday, winter weekday or weekend / holiday. Attributes hold the plan, the timeline and the week ahead for the cards. |
 | `sensor.eg4_tou_controller_status` | Off, read-only or live (writing); `last_write` attribute shows the last write and any error. |
 | `sensor.eg4_tou_registers_out_of_sync` | How many inverter settings differ from the plan; `changes` lists them. |
@@ -307,6 +319,13 @@ The CI (`.github/workflows/validate.yml`) runs all of these plus the HACS check 
 push. `custom_components/eg4_tou/quality_scale.yaml` is a self-assessment against Home Assistant's
 [integration quality scale](https://contributors.home-assistant.io/core/quality-scale/): every rule is
 done or exempt with a reason. It is not an official rating; those exist only for integrations in core.
+### Trying a development build
+
+Tags with a suffix, like `v0.11.0-dev.1`, are published as GitHub **pre-releases**, which HACS hides unless you open
+the repository in HACS, three dots, **Redownload**, and tick *Show beta versions*. To try a working tree without a
+release, copy `custom_components/eg4_tou` into your Home Assistant's `config/custom_components/` and restart, or
+run `uv run python tools/dev_instance.py` for a throwaway Home Assistant (read-only, login `dev` / `eg4-dev`) with it installed.
+
 ### Clean-install test
 
 `tools/clean_install_test.py` downloads a **published** release from GitHub, installs it into a brand-new
