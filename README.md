@@ -358,8 +358,8 @@ cards rendering in a real browser, Configure and the reload it triggers, a Home 
 clean uninstall. Run it before tagging a release:
 
 ```
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.10.0
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.10.0 \
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.11.0
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.11.0 \
     --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4        # oldest supported version
 ```
 
