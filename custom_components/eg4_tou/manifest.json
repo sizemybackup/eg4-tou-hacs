@@ -1,6 +1,7 @@
 {
   "domain": "eg4_tou",
   "name": "EG4 Local TOU Manager",
+  "categories": ["energy.solar_batteries"],
   "codeowners": ["@mecindustriesllc"],
   "config_flow": true,
   "dependencies": ["frontend", "http", "network"],

@@ -27,6 +27,7 @@ TARIFF_CHOICES = {
     "single": "Custom: one schedule all year",
 }
 _TIME = selector.TimeSelector()
+GUIDE_URL = "https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html"
 
 
 def _hhmm(value: str) -> str:
@@ -227,7 +228,7 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional("rescan", default=False): bool,
         })
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors,
-                                    description_placeholders={"scan_result": note})
+                                    description_placeholders={"scan_result": note, "guide_url": GUIDE_URL})
 
     async def _tariff_done(self, key, custom):
         self._data[CONF_TARIFF] = key
