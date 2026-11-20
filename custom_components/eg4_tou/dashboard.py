@@ -9,10 +9,15 @@ convenience, never the setup.
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import slugify
 from homeassistant.util.yaml import load_yaml_dict
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,6 +30,31 @@ DASHBOARD_FILE = Path(__file__).parent / "dashboard.yaml"
 CREATED = "created"
 EXISTS = "exists"
 UNAVAILABLE = "unavailable"
+
+
+_ENTITY_ID = re.compile(r"\b[a-z_]+\.eg4_tou_[a-z0-9_]+\b")
+
+
+def id_map(entries: Iterable[er.RegistryEntry]) -> dict[str, str]:
+    """{id the shipped dashboard uses: the id this install really has}, for entities that were renamed
+    or got a suffix (a second inverter, an older install). Only differences are listed."""
+    out = {}
+    for e in entries:
+        default = f"{e.domain}.eg4_tou_{slugify(e.original_name or '')}"
+        if e.original_name and default != e.entity_id:
+            out[default] = e.entity_id
+    return out
+
+
+def localize(node: Any, mapping: dict[str, str]) -> Any:
+    """The dashboard config with every shipped entity id replaced by this install's own."""
+    if isinstance(node, dict):
+        return {k: localize(v, mapping) for k, v in node.items()}
+    if isinstance(node, list):
+        return [localize(v, mapping) for v in node]
+    if isinstance(node, str) and mapping:
+        return _ENTITY_ID.sub(lambda m: mapping.get(m.group(0), m.group(0)), node)
+    return node
 
 
 def _collection(hass: HomeAssistant) -> Any | None:
@@ -55,9 +85,10 @@ def _find_item(collection: Any) -> dict[str, Any] | None:
     return None
 
 
-async def async_create_dashboard(hass: HomeAssistant) -> str:
+async def async_create_dashboard(hass: HomeAssistant, entry: ConfigEntry | None = None) -> str:
     """Create the dashboard unless something already lives at its address. Returns CREATED, EXISTS
-    or UNAVAILABLE. An existing dashboard is never touched."""
+    or UNAVAILABLE. An existing dashboard is never touched. With `entry`, the entity ids in the
+    shipped dashboard are swapped for the ones this install really has."""
     collection, live = _collection(hass), _live_dashboards(hass)
     if collection is None or live is None:
         return UNAVAILABLE
@@ -65,6 +96,8 @@ async def async_create_dashboard(hass: HomeAssistant) -> str:
         return EXISTS
     try:
         config = await hass.async_add_executor_job(load_yaml_dict, str(DASHBOARD_FILE))
+        if entry is not None:
+            config = localize(config, id_map(er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)))
         item = await collection.async_create_item({
             "url_path": URL_PATH, "title": TITLE, "icon": ICON,
             "show_in_sidebar": True, "require_admin": False, "allow_single_word": True})

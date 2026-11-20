@@ -12,7 +12,7 @@ from .const import EDITABLE
 from .coordinator import TouConfigEntry, TouCoordinator
 from .entity import TouEntity
 from .modbus import WRITE_LIMITS
-from .planner import rules_table, timeline
+from .planner import plan_intent, rules_table, timeline
 
 PARALLEL_UPDATES = 0  # read-only; the coordinator does all inverter I/O
 
@@ -26,15 +26,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: TouConfigEntry,
 class ProfileSensor(TouEntity, SensorEntity):
     _domain = "sensor"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["summer", "winter", "offpeak"]
     # These feed the dashboard cards from the live state only. Recording them would store several KB
     # in the history database on every update, and the recorder drops attributes over 16 KB anyway.
     # peak_windows stays recorded: it is short and useful in history.
     _unrecorded_attributes = frozenset(
-        {"rules", "timeline", "week", "facts", "settings", "entry_id", "peak_edit", *(f"reg_{r}" for r in WRITE_LIMITS)})
+        {"rules", "timeline", "week", "facts", "settings", "entry_id", "peak_edit", "plan", "managed",
+         *(f"reg_{r}" for r in WRITE_LIMITS)})
 
     def __init__(self, c: TouCoordinator) -> None:
         super().__init__(c, "profile", "Active profile")
+        self._attr_options = self._profiles()
+
+    def _profiles(self) -> list[str]:
+        """Every profile name a day can have: the season names of the active tariff, plus the two fixed ones."""
+        return sorted({"summer", "winter", "offpeak", *(s.name for s in self.coordinator.tariff.seasons)})
+
+    def _handle_coordinator_update(self) -> None:
+        self._attr_options = self._profiles()   # before the state is written: a tariff switch can add seasons
+        super()._handle_coordinator_update()
 
     @property
     def native_value(self) -> str:
@@ -44,8 +53,10 @@ class ProfileSensor(TouEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         d = self.coordinator.data
         return {"peak_windows": d.peaks,
-                "rules": rules_table(d.plan, d.current, d.peaks),
-                "timeline": timeline(d.plan, d.current, d.peak_list),
+                "rules": rules_table(d.plan, d.current, d.peaks, d.managed),
+                "plan": plan_intent(d.plan),
+                "managed": sorted(d.managed),
+                "timeline": timeline(d.plan, d.current, d.peak_list, d.managed),
                 "week": d.week,
                 "facts": d.facts,
                 "peak_edit": d.peak_edit,

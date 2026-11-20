@@ -67,7 +67,7 @@ async def _maybe_create_dashboard(hass: "HomeAssistant", entry: "ConfigEntry") -
     """Create the dashboard the wizard offered, once. Failing to do so never fails the setup."""
     if not entry.data.get(CONF_CREATE_DASHBOARD):
         return
-    result = await async_create_dashboard(hass)
+    result = await async_create_dashboard(hass, entry)
     data = {**entry.data, CONF_CREATE_DASHBOARD: False}
     if result == CREATED:
         data[CONF_DASHBOARD_URL] = URL_PATH

@@ -23,6 +23,7 @@ class Season:
     name: str
     start: tuple[int, int]  # (month, day) inclusive
     end: tuple[int, int]    # (month, day) inclusive; may wrap the new year
+    like: str | None = None  # which charge limit applies: "summer" or "winter" (default: its own name if it is one, else winter)
 
     def contains(self, day: date) -> bool:
         md = (day.month, day.day)
@@ -51,6 +52,22 @@ class Tariff:
     # when calendar_holidays is true (the calendar can include days a utility bills as normal).
     holiday_fn: Callable[[date], str | None] | None = None
     calendar_holidays: bool = True
+    # Weekdays (Monday=0) on which the peak windows apply. None means the classic rule: Monday to Friday
+    # when offpeak_weekends is true, every day otherwise.
+    peak_days: tuple[int, ...] | None = None
+
+    def is_peak_weekday(self, day: date) -> bool:
+        if self.peak_days is not None:
+            return day.weekday() in self.peak_days
+        return not (self.offpeak_weekends and day.weekday() >= 5)
+
+    def like_for(self, day: date) -> str:
+        """The charge-limit profile ("summer" or "winter") a day's season behaves like."""
+        name = self.season_for(day)
+        for season in self.seasons:
+            if season.name == name:
+                return season.like or (name if name in ("summer", "winter") else "winter")
+        return "winter"
 
     def season_for(self, day: date) -> str:
         for season in self.seasons:
@@ -104,6 +121,7 @@ class Settings:
     )
     start_soc_gap: int = 5      # AC charge starts this many % below the end SOC
     ac_charge_kw: float = 5.0
+    hold_custom: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)  # replaces the derived hold windows
 
 
 def ac_first_windows(peaks: tuple[tuple[str, str], ...]) -> list[tuple[str, str]]:
@@ -124,6 +142,28 @@ def ac_first_windows(peaks: tuple[tuple[str, str], ...]) -> list[tuple[str, str]
         windows.append((cursor, END_OF_DAY))
     windows += [("00:00", "00:00")] * (3 - len(windows))
     return windows
+
+
+def _pad_windows(windows: Sequence[Sequence[str]]) -> list[tuple[str, str]]:
+    """Up to three (start, end) windows, padded with the inverter's "unused" 00:00-00:00."""
+    out = [(str(a), str(b)) for a, b in windows]
+    if len(out) > 3:
+        raise ValueError("at most 3 hold windows are supported")
+    return out + [("00:00", "00:00")] * (3 - len(out))
+
+
+def validate_hold(windows: Sequence[Sequence[str]]) -> str | None:
+    """Error key for a custom hold-window list, or None."""
+    if len(windows) > 3:
+        return "too_many_hold"
+    ordered = sorted((str(a), str(b)) for a, b in windows)
+    for a, b in ordered:
+        if not a < b:
+            return "hold_order"
+    for (_, e1), (s2, _) in zip(ordered, ordered[1:]):
+        if s2 < e1:
+            return "hold_overlap"
+    return None
 
 
 @dataclass(frozen=True)
@@ -158,9 +198,13 @@ def build_plan(
     season = tariff.season_for(day)
     profile = "offpeak" if offpeak_day else season
     peaks = () if offpeak_day else tariff.peaks_for(day)
-    first = ac_first_windows(peaks)
+    custom = settings.hold_custom.get(profile)
+    first = _pad_windows(custom) if custom is not None else ac_first_windows(peaks)
 
-    end = int(settings.end_soc.get(profile, settings.end_soc.get("offpeak", 50)))
+    end = settings.end_soc.get(profile)
+    if end is None:   # a season with its own name has no charge limit of its own: use the one it behaves like
+        end = settings.end_soc.get("offpeak" if offpeak_day else tariff.like_for(day), settings.end_soc.get("offpeak", 50))
+    end = int(end)
     start = max(0, end - settings.start_soc_gap)
     c1, c2 = settings.charge_window
 
@@ -211,16 +255,28 @@ def _windows(regs: Mapping[int, int | None], first_reg: int, count: int = 3) -> 
     return ", ".join(f"{a}-{b}" for a, b in wl) or "none"
 
 
-def timeline(plan: Plan, current: Mapping[int, int], peaks: Sequence[Sequence[str]]) -> dict[str, Any]:
-    """Structured windows for the 24-hour timeline card: the plan and what the inverter holds now."""
+def plan_intent(plan: Plan) -> dict[str, Any]:
+    """The plan as plain settings (no register numbers), for the get_plan service and the plan attribute."""
+    r = plan.registers
+    return {"profile": plan.profile, "charge_windows": _window_list(r, 68), "hold_windows": _window_list(r, 152),
+            "start_soc": r[160], "end_soc": r[161], "ac_charge_kw": r[66] / 10}
+
+
+def timeline(plan: Plan, current: Mapping[int, int], peaks: Sequence[Sequence[str]],
+             managed: frozenset[int] | None = None) -> dict[str, Any]:
+    """Structured windows for the 24-hour timeline card: the plan and what the inverter holds now.
+    `managed` (slots this integration may write) lets the card say "not managed here" for a lane."""
     return {
+        "managed": None if managed is None else {"hold": bool(managed & set(range(152, 158))),
+                                                 "charge": bool(managed & set(range(68, 74)))},
         "peaks": [list(p) for p in peaks],
         "hold": {"plan": _window_list(plan.registers, 152), "inverter": _window_list(current, 152)},
         "charge": {"plan": _window_list(plan.registers, 68), "inverter": _window_list(current, 68)},
     }
 
 
-def rules_table(plan: Plan, current: Mapping[int, int], peaks_text: str) -> list[dict[str, Any]]:
+def rules_table(plan: Plan, current: Mapping[int, int], peaks_text: str,
+                managed: frozenset[int] | None = None) -> list[dict[str, Any]]:
     """Rows for a dashboard: what the plan wants vs what the inverter holds now."""
     def pct(regs: Mapping[int, int]) -> str | None:
         lo, hi = regs.get(160), regs.get(161)
@@ -237,8 +293,13 @@ def rules_table(plan: Plan, current: Mapping[int, int], peaks_text: str) -> list
         ("Charge starts below / stops at", pct),
         ("AC charge power", kw),
     )
-    for label, fn in rules:
+    slots = (range(152, 158), range(68, 74), (160, 161), (POWER_REG,))
+    for (label, fn), rule_slots in zip(rules, slots):
         want, have = fn(plan.registers), fn(current)
+        if managed is not None and not set(rule_slots) & managed:
+            rows.append({"rule": label, "plan": want, "now": have if have is not None else "not managed",
+                         "in_sync": None})   # not written by this integration: nothing to compare
+            continue
         rows.append({"rule": label, "plan": want, "now": have if have is not None else "unknown",
                      "in_sync": want == have})
     return rows
@@ -304,8 +365,14 @@ def tariff_from_custom(c: Mapping[str, Any]) -> Tariff:
      "offpeak_weekends": true}
     """
     seasons = tuple(
-        Season(name, tuple(v["start"]), tuple(v["end"])) for name, v in c["seasons"].items()
+        Season(name, tuple(v["start"]), tuple(v["end"]), v.get("like")) for name, v in c["seasons"].items()
     )
+    for season in seasons:
+        if season.like not in (None, "summer", "winter"):
+            raise ValueError(f"{season.name}: like must be summer or winter")
+    days = c.get("peak_days")
+    if days is not None and (not days or any(not isinstance(d, int) or not 0 <= d <= 6 for d in days)):
+        raise ValueError("peak_days must be weekday numbers 0 (Monday) to 6 (Sunday)")
     peaks = {n: tuple((a, b) for a, b in w) for n, w in c["peaks"].items()}
     for n, w in peaks.items():
         err = validate_peaks(list(w))
@@ -313,7 +380,8 @@ def tariff_from_custom(c: Mapping[str, Any]) -> Tariff:
             raise ValueError(f"{n}: {err}")
     return Tariff(name="Custom", seasons=seasons, peaks=peaks,
                   offpeak_weekends=bool(c.get("offpeak_weekends", True)),
-                  calendar_holidays=bool(c.get("offpeak_holidays", True)))
+                  calendar_holidays=bool(c.get("offpeak_holidays", True)),
+                  peak_days=tuple(days) if days is not None else None)
 
 
 # ---- Presets -------------------------------------------------------------

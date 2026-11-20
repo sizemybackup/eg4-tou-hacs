@@ -11,26 +11,26 @@ update_settings:
     end_soc_summer:
       selector:
         number:
-          min: 20
+          min: 0
           max: 100
           unit_of_measurement: "%"
     end_soc_winter:
       selector:
         number:
-          min: 20
+          min: 0
           max: 100
           unit_of_measurement: "%"
     end_soc_offpeak:
       selector:
         number:
-          min: 20
+          min: 0
           max: 100
           unit_of_measurement: "%"
     ac_charge_kw:
       selector:
         number:
-          min: 1
-          max: 10
+          min: 0.5
+          max: 20
           step: 0.5
           unit_of_measurement: kW
     entry_id:
@@ -43,6 +43,51 @@ update_settings:
       example: '{"winter": [["07:00", "11:00"], ["17:00", "21:00"]]}'
       selector:
         object:
+    write_groups:
+      advanced: true
+      example: '{"hold_windows": false}'
+      selector:
+        object:
+    hold:
+      advanced: true
+      example: '{"winter": [["00:00", "07:00"], ["21:00", "23:59"]]}'
+      selector:
+        object:
+    start_soc_gap:
+      advanced: true
+      selector:
+        number:
+          min: 0
+          max: 50
+          unit_of_measurement: "%"
+    soc_min:
+      advanced: true
+      selector:
+        number:
+          min: 0
+          max: 99
+          unit_of_measurement: "%"
+    soc_max:
+      advanced: true
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+    ac_kw_max:
+      advanced: true
+      selector:
+        number:
+          min: 1
+          max: 20
+          unit_of_measurement: kW
+    poll_minutes:
+      advanced: true
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: min
 set_tariff:
   fields:
     name:
@@ -77,6 +122,30 @@ delete_tariff:
       required: true
       selector:
         text:
+    entry_id:
+      advanced: true
+      selector:
+        config_entry:
+          integration: eg4_tou
+get_plan:
+  fields:
+    entry_id:
+      advanced: true
+      selector:
+        config_entry:
+          integration: eg4_tou
+import_tariff:
+  fields:
+    name:
+      required: true
+      example: "Utility B"
+      selector:
+        text:
+    tariff:
+      required: true
+      example: '{"seasons": {"summer": {"start": [6, 1], "end": [9, 30]}, "winter": {"start": [10, 1], "end": [5, 31]}}, "peaks": {"summer": [["14:00", "19:00"]], "winter": [["06:00", "09:00"]]}, "peak_days": [0, 1, 2, 3, 4]}'
+      selector:
+        object:
     entry_id:
       advanced: true
       selector:

@@ -66,10 +66,12 @@ function bars(windows, cls, now, h24) {
   return out.join("") + `<i class="now" style="left:${pct(now).toFixed(2)}%"></i>`;
 }
 
-function lane(name, cls, plan, inverter, now, hasInverter, h24) {
+function lane(name, cls, plan, inverter, now, hasInverter, h24, managed) {
   let status = "";
   let invTrack = "";
-  if (hasInverter) {
+  if (hasInverter && managed === false) {
+    status = `<span class="st">not managed here</span>`;   // switched off, or not mapped: nothing to compare
+  } else if (hasInverter) {
     if (inverter === null || inverter === undefined) {
       status = `<span class="st warn">inverter not read</span>`;
     } else if (same(plan, inverter)) {
@@ -101,8 +103,8 @@ function renderTimeline(model, now, title, opts) {
     (title || edit ? `<div class="titlebar"><div class="title">${esc(title || "")}</div>${edit}</div>` : "") +
     (opts && opts.tariff ? `<div class="tariffline">Tariff: <b>${esc(opts.tariff)}</b></div>` : "") +
     lane("On-peak hours (your tariff)", "peak", peaks, null, now, false, h24) +
-    lane("Hold windows (AC First)", "hold", (m.hold || {}).plan, (m.hold || {}).inverter, now, true, h24) +
-    lane("Overnight charge", "charge", (m.charge || {}).plan, (m.charge || {}).inverter, now, true, h24) +
+    lane("Hold windows (AC First)", "hold", (m.hold || {}).plan, (m.hold || {}).inverter, now, true, h24, (m.managed || {}).hold) +
+    lane("Overnight charge", "charge", (m.charge || {}).plan, (m.charge || {}).inverter, now, true, h24, (m.managed || {}).charge) +
     axis(now, h24) + `</div>`;
 }
 

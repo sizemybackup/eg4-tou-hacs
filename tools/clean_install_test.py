@@ -217,7 +217,7 @@ def wait_entities(ha: HA, timeout=240) -> dict:
     while time.time() < end:
         st = {k: v for k, v in ha.states().items() if k.split(".", 1)[1].startswith("eg4_tou_")}
         prof = st.get("sensor.eg4_tou_active_profile")
-        if len(st) >= 12 and prof and prof["state"] not in ("unavailable", "unknown"):
+        if len(st) >= 16 and prof and prof["state"] not in ("unavailable", "unknown"):
             return st
         time.sleep(5)
     return st
@@ -228,9 +228,10 @@ def check_entities(st: dict) -> None:
             "switch.eg4_tou_controller_enabled", "switch.eg4_tou_read_only_mode", "number.eg4_tou_ac_charge_power",
             "number.eg4_tou_charge_limit_summer_weekday", "number.eg4_tou_charge_limit_winter_weekday",
             "number.eg4_tou_charge_limit_weekend_holiday", "time.eg4_tou_charge_start", "time.eg4_tou_charge_end",
-            "select.eg4_tou_tariff"]
+            "select.eg4_tou_tariff", "switch.eg4_tou_manage_charge_window", "switch.eg4_tou_manage_hold_windows",
+            "switch.eg4_tou_manage_charge_limits", "switch.eg4_tou_manage_charge_power"]
     miss = [e for e in want if e not in st]
-    record("all 12 entities exist with predictable ids", not miss, ", ".join(miss) or "ok")
+    record("all 16 entities exist with predictable ids", not miss, ", ".join(miss) or "ok")
     bad = [e for e in want if e in st and st[e]["state"] in ("unavailable",)]
     record("no entity is unavailable", not bad, ", ".join(bad))
     prof = st.get("sensor.eg4_tou_active_profile", {})
@@ -345,14 +346,22 @@ def dashboard_paths(ha: HA, base: str) -> list[str] | None:
 
 def options_and_reload(ha: HA, entry_id: str) -> None:
     s, f = ha.call("POST", "/api/config/config_entries/options/flow", {"handler": entry_id})
-    if not record("Configure (options flow) opens the tariff screen", s == 200 and f.get("step_id") == "tariff", f"http {s} {str(f)[:140]}"):
+    if not record("Configure (options flow) opens a menu: tariff, limits, hold windows",
+                  s == 200 and f.get("type") == "menu" and "limits" in f.get("menu_options", []), f"http {s} {str(f)[:140]}"):
+        return
+    s, f = ha.call("POST", f"/api/config/config_entries/options/flow/{f['flow_id']}", {"next_step_id": "edit_tariff"})
+    if not record("the tariff screen opens from the menu", s == 200 and f.get("step_id") == "tariff", f"http {s} {str(f)[:140]}"):
         return
     s, f2 = ha.call("POST", f"/api/config/config_entries/options/flow/{f['flow_id']}",
                     {"tariff": "bge_rl", "offpeak_weekends": True, "offpeak_holidays": True})
     record("Configure saves a changed tariff", s == 200 and f2.get("type") == "create_entry", f"http {s} {str(f2)[:140]}")
+    s, plan = ha.call("POST", "/api/services/eg4_tou/get_plan?return_response", {})
+    resp = (plan or {}).get("service_response", {}) if isinstance(plan, dict) else {}
+    record("get_plan returns today's plan as plain settings", s == 200 and "end_soc" in resp and "hold_windows" in resp,
+           f"http {s} {str(plan)[:140]}")
     time.sleep(8)                                    # the entry reloads itself
     st = wait_entities(ha, 150)
-    record("the entry reloads after Configure and the entities come back", len(st) >= 12 and
+    record("the entry reloads after Configure and the entities come back", len(st) >= 16 and
            st.get("sensor.eg4_tou_active_profile", {}).get("state") not in (None, "unavailable"), f"{len(st)} entities")
 
 
@@ -406,7 +415,7 @@ def main() -> int:
                     sh("docker", "restart", container)
                     ha.wait_up()
                     st = wait_entities(ha, 240)
-                    record("after a Home Assistant restart the integration loads again", len(st) >= 12 and
+                    record("after a Home Assistant restart the integration loads again", len(st) >= 16 and
                            st.get("sensor.eg4_tou_active_profile", {}).get("state") not in (None, "unavailable"), f"{len(st)} entities")
                     # uninstall
                     s, _ = ha.call("DELETE", f"/api/config/config_entries/entry/{ctx['entry_id']}")

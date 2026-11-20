@@ -27,6 +27,18 @@
       },
       "dry_run": {
         "default": "mdi:test-tube"
+      },
+      "write_charge_window": {
+        "default": "mdi:clock-edit-outline"
+      },
+      "write_hold_windows": {
+        "default": "mdi:shield-lock-outline"
+      },
+      "write_soc": {
+        "default": "mdi:battery-lock"
+      },
+      "write_power": {
+        "default": "mdi:flash-outline"
       }
     },
     "number": {
@@ -69,6 +81,12 @@
     },
     "delete_tariff": {
       "service": "mdi:delete"
+    },
+    "get_plan": {
+      "service": "mdi:clipboard-text-clock-outline"
+    },
+    "import_tariff": {
+      "service": "mdi:file-import-outline"
     }
   }
 }

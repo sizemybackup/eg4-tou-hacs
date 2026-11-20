@@ -24,7 +24,7 @@ SOC_REGS = (160, 161)
 POWER_REG = 66  # AC charge power, 100 W units
 
 WRITE_LIMITS: dict[int, tuple[int, int]] = {
-    POWER_REG: (10, 100),   # 1.0 .. 10.0 kW
+    POWER_REG: (10, 200),   # 1.0 .. 20.0 kW (the user's own ac_kw_max option narrows this)
     160: (0, 100),          # AC charge start SOC %
     161: (0, 100),          # AC charge end SOC %
 }

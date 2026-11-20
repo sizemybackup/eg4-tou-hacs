@@ -216,3 +216,13 @@ test("editor offers the tariff picker; the built-in example has no Delete; view 
   assert.match(T.renderTimeline(model, 0, "T", { tariff: "Mine <b>" }), /Tariff: <b>Mine &lt;b&gt;<\/b>/);   // escaped
   assert.ok(!T.renderTimeline(model, 0, "T").includes("Tariff:"));
 });
+
+test("a lane that is switched off says so instead of warning that the inverter was not read", () => {
+  const model = { peaks: [], managed: { hold: false, charge: true },
+    hold: { plan: [["00:00", "07:00"]], inverter: null }, charge: { plan: [["01:00", "05:00"]], inverter: null } };
+  const html = renderTimeline(model, 600, "T", { h24: true });
+  assert.match(html, /not managed here/);
+  assert.equal((html.match(/inverter not read/g) || []).length, 1, "only the managed lane warns");
+  const plain = renderTimeline({ ...model, managed: null }, 600, "T", { h24: true });
+  assert.doesNotMatch(plain, /not managed here/);
+});

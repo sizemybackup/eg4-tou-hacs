@@ -10,7 +10,8 @@
           "unit": "Modbus unit id",
           "country": "Country code for holidays (e.g. US)",
           "subdiv": "State/region for holidays (optional, e.g. MD)",
-          "rescan": "Scan again: tick this, then press Submit (setup will not continue)"
+          "rescan": "Scan again: tick this, then press Submit (setup will not continue)",
+          "use_entities": "Use entities I already have in Home Assistant (instead of a gateway)"
         },
         "data_description": {
           "host": "Local IP address or host name of the RS485-to-Ethernet gateway wired to the inverter's RS485 port. It must be on your own network; public internet addresses are refused.",
@@ -18,7 +19,8 @@
           "unit": "Modbus unit (slave) id of the inverter. 1 on a standard EG4 12000XP.",
           "country": "Two-letter country code. Used for public holidays in custom schedules (the BGE preset has its own holiday list).",
           "subdiv": "State or region code within that country, for regional holidays. Leave empty for national holidays only.",
-          "rescan": "Tick and press Submit to scan your local network for the gateway again. Setup does not continue while this is ticked."
+          "rescan": "Tick and press Submit to scan your local network for the gateway again. Setup does not continue while this is ticked.",
+          "use_entities": "Tick this and press Submit if your inverter is already in Home Assistant through another integration, or you control it with your own entities. The next screen lets you pick them from a list."
         }
       },
       "mode": {
@@ -116,6 +118,86 @@
         "data_description": {
           "create_dashboard": "Untick it if you would rather build your own; the dashboard file stays in the integration's folder."
         }
+      },
+      "entities": {
+        "title": "Your inverter's entities",
+        "description": "Pick the Home Assistant entity that holds each setting. {detected}\n\nEvery field is optional: a setting you leave empty is never read or written by this integration. Time settings are time entities (or input_datetime with a time); the rest are number entities.",
+        "data": {
+          "charge_1_start": "Charge window 1: start (time)",
+          "charge_1_end": "Charge window 1: end (time)",
+          "charge_2_start": "Charge window 2: start (time, optional)",
+          "charge_2_end": "Charge window 2: end (time, optional)",
+          "charge_3_start": "Charge window 3: start (time, optional)",
+          "charge_3_end": "Charge window 3: end (time, optional)",
+          "hold_1_start": "Hold window 1: start (time)",
+          "hold_1_end": "Hold window 1: end (time)",
+          "hold_2_start": "Hold window 2: start (time)",
+          "hold_2_end": "Hold window 2: end (time)",
+          "hold_3_start": "Hold window 3: start (time)",
+          "hold_3_end": "Hold window 3: end (time)",
+          "soc_start": "Charge starts below (battery %)",
+          "soc_end": "Charge stops at (battery %)",
+          "power": "AC charge power"
+        },
+        "data_description": {
+          "charge_1_start": "The overnight grid-charge window. Leave a setting empty to leave it alone: this integration then never reads or writes it.",
+          "hold_1_start": "The windows in which the battery is held (grid carries the house). Often called AC First.",
+          "soc_start": "Overnight charging starts when the battery is below this.",
+          "soc_end": "Overnight charging stops at this battery level.",
+          "power": "How hard the grid charges the battery. Watts or kilowatts are both understood.",
+          "charge_1_end": "The time entity for this window. Leave empty to leave it alone.",
+          "charge_2_start": "The time entity for this window. Leave empty to leave it alone.",
+          "charge_2_end": "The time entity for this window. Leave empty to leave it alone.",
+          "charge_3_start": "The time entity for this window. Leave empty to leave it alone.",
+          "charge_3_end": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_1_end": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_2_start": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_2_end": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_3_start": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_3_end": "The time entity for this window. Leave empty to leave it alone."
+        }
+      },
+      "reconfigure_entities": {
+        "title": "Reconfigure: your inverter's entities",
+        "description": "Change which entities hold each setting, or the holiday region. Tariff, mode and charge settings are kept.",
+        "data": {
+          "charge_1_start": "Charge window 1: start (time)",
+          "charge_1_end": "Charge window 1: end (time)",
+          "charge_2_start": "Charge window 2: start (time, optional)",
+          "charge_2_end": "Charge window 2: end (time, optional)",
+          "charge_3_start": "Charge window 3: start (time, optional)",
+          "charge_3_end": "Charge window 3: end (time, optional)",
+          "hold_1_start": "Hold window 1: start (time)",
+          "hold_1_end": "Hold window 1: end (time)",
+          "hold_2_start": "Hold window 2: start (time)",
+          "hold_2_end": "Hold window 2: end (time)",
+          "hold_3_start": "Hold window 3: start (time)",
+          "hold_3_end": "Hold window 3: end (time)",
+          "soc_start": "Charge starts below (battery %)",
+          "soc_end": "Charge stops at (battery %)",
+          "power": "AC charge power",
+          "country": "Country code for holidays (e.g. US)",
+          "subdiv": "State/region for holidays (optional, e.g. MD)"
+        },
+        "data_description": {
+          "charge_1_start": "The overnight grid-charge window. Leave a setting empty to leave it alone: this integration then never reads or writes it.",
+          "hold_1_start": "The windows in which the battery is held (grid carries the house). Often called AC First.",
+          "soc_start": "Overnight charging starts when the battery is below this.",
+          "soc_end": "Overnight charging stops at this battery level.",
+          "power": "How hard the grid charges the battery. Watts or kilowatts are both understood.",
+          "charge_1_end": "The time entity for this window. Leave empty to leave it alone.",
+          "charge_2_start": "The time entity for this window. Leave empty to leave it alone.",
+          "charge_2_end": "The time entity for this window. Leave empty to leave it alone.",
+          "charge_3_start": "The time entity for this window. Leave empty to leave it alone.",
+          "charge_3_end": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_1_end": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_2_start": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_2_end": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_3_start": "The time entity for this window. Leave empty to leave it alone.",
+          "hold_3_end": "The time entity for this window. Leave empty to leave it alone.",
+          "country": "Two-letter country code, for public holidays in custom tariffs.",
+          "subdiv": "State or region code, for regional holidays. Leave empty for national holidays only."
+        }
       }
     },
     "error": {
@@ -130,7 +212,9 @@
       "public_address": "That is a public internet address. Modbus has no authentication, so the gateway must be on your local network: use its local (private) address.",
       "bad_country": "Unknown country code. Use the two-letter code, for example US or CA.",
       "bad_subdiv": "Unknown state/region for that country. Use its code (for example MD), or leave it empty.",
-      "already_configured": "Another EG4 TOU entry already uses that gateway."
+      "already_configured": "Another EG4 TOU entry already uses that gateway.",
+      "no_entities": "Pick at least one entity.",
+      "duplicate_entities": "The same entity is used for two settings."
     },
     "abort": {
       "already_configured": "This gateway is already configured.",
@@ -140,7 +224,13 @@
   "options": {
     "step": {
       "init": {
-        "title": "Tariff"
+        "title": "Configure",
+        "description": "What do you want to change?",
+        "menu_options": {
+          "edit_tariff": "Tariff: add or change a tariff",
+          "limits": "Limits and timing: what your hardware allows, how often to check",
+          "hold": "Hold windows: set your own instead of deriving them from the peaks"
+        }
       },
       "tariff": {
         "title": "Time-of-use tariff",
@@ -199,6 +289,34 @@
         "data_description": {
           "name": "For example: Summer plan, Utility B, Vacation."
         }
+      },
+      "limits": {
+        "title": "Limits and timing",
+        "description": "The defaults suit the EG4 12000XP. Change them if your battery or inverter allows more or less.",
+        "data": {
+          "poll_minutes": "Check every",
+          "start_soc_gap": "Charge starts this far below the charge limit",
+          "soc_min": "Lowest charge limit you can set",
+          "soc_max": "Highest charge limit you can set",
+          "ac_kw_max": "Highest AC charge power you can set"
+        },
+        "data_description": {
+          "poll_minutes": "How often the inverter is read and the plan re-applied (minutes).",
+          "start_soc_gap": "Overnight charging starts this many % below the charge limit.",
+          "soc_min": "The charge-limit sliders will not go lower than this.",
+          "soc_max": "The charge-limit sliders will not go higher than this.",
+          "ac_kw_max": "The charge-power setting will not go higher than this."
+        }
+      },
+      "hold": {
+        "title": "Hold windows",
+        "description": "By default the hold windows are everything outside the on-peak hours. To use your own, give them per profile (summer, winter, offpeak, or one of your season names), at most 3 windows each, like:\n\n```\nwinter:\n  - [\"00:00\", \"07:00\"]\n  - [\"21:00\", \"23:59\"]\n```\n\nLeave it empty to go back to deriving them.",
+        "data": {
+          "hold_custom": "Your own hold windows"
+        },
+        "data_description": {
+          "hold_custom": "Per profile, up to 3 [start, end] windows. Leave empty to derive them from the on-peak hours."
+        }
       }
     },
     "error": {
@@ -210,7 +328,14 @@
       "peak_overlap": "The two peak windows overlap.",
       "too_many_peaks": "The 12000XP supports at most 2 on-peak windows per day.",
       "tariff_name_invalid": "Enter a name of 1 to 40 characters.",
-      "tariff_builtin": "That name belongs to the built-in example tariff. Pick another name."
+      "tariff_builtin": "That name belongs to the built-in example tariff. Pick another name.",
+      "limits_order": "The lowest charge limit must be below the highest.",
+      "soc_out_of_range": "One of your current charge limits is outside the new range. Change it first.",
+      "power_out_of_range": "Your current AC charge power is above the new maximum. Change it first.",
+      "bad_hold": "That is not a list of windows like [\"00:00\", \"07:00\"].",
+      "too_many_hold": "At most 3 hold windows per profile.",
+      "hold_order": "Each hold window must end after it starts.",
+      "hold_overlap": "Hold windows must not overlap."
     }
   },
   "entity": {
@@ -241,6 +366,18 @@
       },
       "dry_run": {
         "name": "Read-only mode"
+      },
+      "write_charge_window": {
+        "name": "Manage charge window"
+      },
+      "write_hold_windows": {
+        "name": "Manage hold windows"
+      },
+      "write_soc": {
+        "name": "Manage charge limits"
+      },
+      "write_power": {
+        "name": "Manage charge power"
       }
     },
     "number": {
@@ -304,6 +441,27 @@
     },
     "tariff_builtin": {
       "message": "{name} is the built-in example and cannot be changed or deleted. Save it as a new tariff first."
+    },
+    "limits_order": {
+      "message": "The lowest battery limit must be below the highest."
+    },
+    "soc_out_of_range": {
+      "message": "A charge limit of {value}% is outside the allowed {lo}-{hi}%. Change the limits under Configure first."
+    },
+    "power_out_of_range": {
+      "message": "{value} kW is outside the allowed {lo}-{hi} kW. Change the limits under Configure first."
+    },
+    "too_many_hold": {
+      "message": "At most 3 hold windows are supported."
+    },
+    "hold_order": {
+      "message": "Each hold window must end after it starts, on the same day."
+    },
+    "hold_overlap": {
+      "message": "Hold windows must not overlap."
+    },
+    "tariff_invalid": {
+      "message": "That tariff is not valid: {error}"
     }
   },
   "services": {
@@ -342,6 +500,34 @@
         "peaks": {
           "name": "On-peak windows",
           "description": "Per season, the on-peak windows of the active tariff as a list of [start, end] pairs (at most 2, not overlapping). Use null for a season to go back to the tariff's own windows. Not allowed on the built-in example."
+        },
+        "write_groups": {
+          "name": "Write groups",
+          "description": "Which kinds of setting this integration may write: charge_window, hold_windows, soc, power. For example {\"hold_windows\": false} leaves the hold windows to you."
+        },
+        "hold": {
+          "name": "Custom hold windows",
+          "description": "Per profile (summer, winter, offpeak or a season name), hold windows that replace the ones derived from the on-peak hours. Use null to go back to deriving them."
+        },
+        "start_soc_gap": {
+          "name": "Charge start gap",
+          "description": "Overnight charging starts this many % below the charge limit."
+        },
+        "soc_min": {
+          "name": "Lowest charge limit",
+          "description": "The lowest charge limit you can set (battery %)."
+        },
+        "soc_max": {
+          "name": "Highest charge limit",
+          "description": "The highest charge limit you can set (battery %)."
+        },
+        "ac_kw_max": {
+          "name": "Highest AC charge power",
+          "description": "The highest AC charge power you can set (kW)."
+        },
+        "poll_minutes": {
+          "name": "Check every",
+          "description": "How often to read the inverter and re-apply the plan (minutes)."
         }
       }
     },
@@ -388,6 +574,34 @@
         "entry_id": {
           "name": "Entry",
           "description": "Only needed if more than one EG4 TOU Manager is set up."
+        }
+      }
+    },
+    "get_plan": {
+      "name": "Get plan",
+      "description": "Return today's plan as plain settings (charge windows, hold windows, charge limits, power), what is managed and what differs from the inverter. For your own automations.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry",
+          "description": "Which EG4 TOU Manager, when you have more than one."
+        }
+      }
+    },
+    "import_tariff": {
+      "name": "Import tariff",
+      "description": "Add a tariff from its definition: seasons with date ranges, on-peak windows per season, and optionally which weekdays are peak days. See the README for the format.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "What to call the tariff."
+        },
+        "tariff": {
+          "name": "Tariff",
+          "description": "The tariff definition (seasons, peaks, peak_days, offpeak_holidays)."
+        },
+        "entry_id": {
+          "name": "Entry",
+          "description": "Which EG4 TOU Manager, when you have more than one."
         }
       }
     }

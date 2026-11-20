@@ -8,7 +8,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import OPT_DRY_RUN, OPT_ENABLED
+from .const import OPT_DRY_RUN, OPT_ENABLED, OPT_WRITE_GROUPS, write_groups
+from .drivers import GROUPS
 from .coordinator import TouConfigEntry, TouCoordinator
 from .entity import TouEntity
 
@@ -19,7 +20,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: TouConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     c = entry.runtime_data
     async_add_entities([OptionSwitch(c, OPT_ENABLED, "Controller enabled"),
-                        OptionSwitch(c, OPT_DRY_RUN, "Read-only mode")])
+                        OptionSwitch(c, OPT_DRY_RUN, "Read-only mode"),
+                        *(GroupSwitch(c, g, GROUP_NAMES[g]) for g in GROUPS)])
+
+
+GROUP_NAMES = {"charge_window": "Manage charge window", "hold_windows": "Manage hold windows",
+               "soc": "Manage charge limits", "power": "Manage charge power"}
 
 
 class OptionSwitch(TouEntity, SwitchEntity):
@@ -41,3 +47,29 @@ class OptionSwitch(TouEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         self._set_option(self._key, False)
+
+
+class GroupSwitch(OptionSwitch):
+    """Whether the integration may write one kind of setting. Off means "leave it to me": the plan is
+    still shown, but nothing of that kind is compared or written."""
+
+    def __init__(self, c: TouCoordinator, group: str, name: str) -> None:
+        super().__init__(c, f"write_{group}", name)
+        self._group = group
+
+    @property
+    def is_on(self) -> bool:
+        return bool(write_groups(self.coordinator.entry.options).get(self._group, True))
+
+    @property
+    def available(self) -> bool:
+        return super().available and bool(set(GROUPS[self._group]) & self.coordinator.driver.slots)
+
+    def _set(self, on: bool) -> None:
+        self._set_option(OPT_WRITE_GROUPS, {**write_groups(self.coordinator.entry.options), self._group: on})
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self._set(False)

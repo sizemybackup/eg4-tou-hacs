@@ -6,7 +6,7 @@ from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import AC_KW_RANGE, AC_KW_STEP, OPT_AC_KW, SOC_RANGE, OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER
+from .const import AC_KW_STEP, OPT_AC_KW, OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, limits
 from .coordinator import TouConfigEntry, TouCoordinator
 from .entity import TouEntity
 
@@ -17,10 +17,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: TouConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     c = entry.runtime_data
     async_add_entities([
-        OptionNumber(c, OPT_END_SOC_SUMMER, "Charge limit, summer weekday", *SOC_RANGE, 1, PERCENTAGE),
-        OptionNumber(c, OPT_END_SOC_WINTER, "Charge limit, winter weekday", *SOC_RANGE, 1, PERCENTAGE),
-        OptionNumber(c, OPT_END_SOC_OFFPEAK, "Charge limit, weekend / holiday", *SOC_RANGE, 1, PERCENTAGE),
-        OptionNumber(c, OPT_AC_KW, "AC charge power", *AC_KW_RANGE, AC_KW_STEP, UnitOfPower.KILO_WATT),
+        OptionNumber(c, OPT_END_SOC_SUMMER, "Charge limit, summer weekday", "soc", 1, PERCENTAGE),
+        OptionNumber(c, OPT_END_SOC_WINTER, "Charge limit, winter weekday", "soc", 1, PERCENTAGE),
+        OptionNumber(c, OPT_END_SOC_OFFPEAK, "Charge limit, weekend / holiday", "soc", 1, PERCENTAGE),
+        OptionNumber(c, OPT_AC_KW, "AC charge power", "kw", AC_KW_STEP, UnitOfPower.KILO_WATT),
     ])
 
 
@@ -29,12 +29,23 @@ class OptionNumber(TouEntity, NumberEntity):
     _attr_mode = NumberMode.BOX
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, c: TouCoordinator, key: str, name: str,
-                 lo: float, hi: float, step: float, unit: str) -> None:
+    def __init__(self, c: TouCoordinator, key: str, name: str, which: str, step: float, unit: str) -> None:
         super().__init__(c, key, name)
-        self._key = key
-        self._attr_native_min_value, self._attr_native_max_value = lo, hi
+        self._key, self._which = key, which
         self._attr_native_step, self._attr_native_unit_of_measurement = step, unit
+
+    def _range(self) -> tuple[float, float]:
+        """The user's own limits (Configure > Limits and timing); the defaults suit the 12000XP."""
+        soc, kw = limits(self.coordinator.entry.options)
+        return soc if self._which == "soc" else kw
+
+    @property
+    def native_min_value(self) -> float:
+        return self._range()[0]
+
+    @property
+    def native_max_value(self) -> float:
+        return self._range()[1]
 
     @property
     def native_value(self) -> float:

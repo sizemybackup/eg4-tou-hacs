@@ -112,6 +112,27 @@ find/replace them in the raw editor.
   [wiring and gateway guide](https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html)).
 * This is independent of, and does not replace, the EG4 monitoring integration.
   Run it alongside whichever monitoring integration you use.
+* No gateway of your own? You can point it at inverter entities Home Assistant already has instead
+  (see [Use entities you already have](#use-entities-you-already-have)).
+
+### Use entities you already have
+
+The integration does not have to talk to the inverter itself. If your inverter is already in Home
+Assistant through another integration (the EG4 monitoring integration, ESPHome, MQTT, ...), or you
+drive it with your own helpers, tick **Use entities I already have** on the first setup screen. The
+next screen lists one drop-down per setting (three charge windows, three hold windows, charge start
+and stop %, charge power). It is **pre-selected from what Home Assistant already knows**: entities
+named like "AC Charge Start Time 1" or "AC First End Time 2" are found for you, and you can search
+and change any of them. Every field is optional; a setting you leave empty is never read or written.
+
+* Time settings are `time` entities (or `input_datetime` with a time); the rest are `number`
+  (or `input_number`) entities. Watts and kilowatts are both understood for the charge power.
+* Reads and writes go through Home Assistant's own services (`time.set_value`, `number.set_value`),
+  with the same value limits as the gateway path. If a mapped entity is unavailable, that cycle is
+  skipped and nothing is written.
+* Another integration may take a moment to push a change to the inverter, so the "out of sync"
+  count can lag a cycle behind a write.
+* **Reconfigure** (three-dot menu) changes the mapping later.
 
 ### Supported devices
 
@@ -119,7 +140,7 @@ find/replace them in the raw editor.
 |---|---|
 | EG4 12000XP (V2) | Supported: developed and run daily on one (firmware `ceaa-0508`). |
 | Other EG4 models with the same register map (AC charge windows 68-73, AC First windows 152-157, AC charge SOC 160/161, AC charge power 66) | Untested. Use read-only mode first and compare "Today's rules" with the inverter's own screen. |
-| EG4 inverters with a different register map, and non-EG4 inverters | Not supported. Setup's read-only probe may succeed on any Modbus device, so do not enable read-write on them. |
+| EG4 inverters with a different register map, and non-EG4 inverters | Not supported through the gateway. If Home Assistant already exposes their charge windows and limits as entities, use the entity path above. Setup's read-only probe may succeed on any Modbus device, so do not enable read-write on them. |
 | Gateways | Any RS485-to-Modbus-TCP gateway that forwards Modbus RTU should work; the integration copes with gateways that broadcast replies to every client. |
 
 ## Install
@@ -181,8 +202,13 @@ A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manag
 
 ### Settings you can change later
 
-* **Configure** button: add a named tariff (the example, or custom seasons and peak windows, weekends, holidays) and switch to it.
-* **Reconfigure** (three-dot menu): gateway address, port, unit id, holiday country/state.
+* **Configure** button opens a menu:
+  * **Tariff**: add a named tariff (the example, or custom seasons and peak windows, weekends, holidays) and switch to it.
+  * **Limits and timing**: how often to check (default 10 minutes), how far below the charge limit charging
+    starts (default 5%), the lowest and highest charge limit, and the highest charge power. Defaults suit the
+    12000XP; widen them if your battery or inverter allows more.
+  * **Hold windows**: your own hold windows per profile instead of the ones derived from the peaks.
+* **Reconfigure** (three-dot menu): gateway address, port, unit id (or the entity mapping), holiday country/state.
 * Entities on the device page (also on the dashboard):
 
 | Entity | What it does |
@@ -190,16 +216,52 @@ A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manag
 | `switch.eg4_tou_controller_enabled` | Master switch. Off: nothing is planned or written. |
 | `switch.eg4_tou_read_only_mode` | On: plan only, never write. Off: write differences to the inverter. |
 | `select.eg4_tou_tariff` | Which saved tariff is in use. |
-| `number.eg4_tou_charge_limit_summer_weekday` | AC charge end SOC on summer weekdays (20-100%). |
+| `switch.eg4_tou_manage_charge_window`, `..._manage_hold_windows`, `..._manage_charge_limits`, `..._manage_charge_power` | Which kinds of setting this integration may write. Switch one off to keep that setting under your own control: it is still planned and shown, but never compared or written, and it no longer counts as out of sync. |
+| `number.eg4_tou_charge_limit_summer_weekday` | AC charge end SOC on summer weekdays (20-100% by default). |
 | `number.eg4_tou_charge_limit_winter_weekday` | AC charge end SOC on winter weekdays (20-100%). |
 | `number.eg4_tou_charge_limit_weekend_holiday` | AC charge end SOC on weekends and holidays (20-100%). |
 | `number.eg4_tou_ac_charge_power` | AC charge power while grid charging (1-10 kW). |
 | `time.eg4_tou_charge_start`, `time.eg4_tou_charge_end` | The overnight AC charge window. |
 | actions `eg4_tou.set_tariff`, `save_tariff_as`, `delete_tariff` | Switch to a saved tariff by name, copy the active one (optionally with new on-peak windows) under a new name, delete one you made. Administrators only. |
+| action `eg4_tou.get_plan` | Returns today's plan as plain settings (charge windows, hold windows, start/stop %, kW, what is managed, what differs) for your own automations. Also published as the `plan` attribute of the profile sensor. |
+| action `eg4_tou.import_tariff` | Add a tariff from its definition, see [Tariff format](#tariff-format). |
 | action `eg4_tou.update_settings` | Change the on-peak windows, the charge window, the three charge limits and the AC charge power in one call (what the timeline card's Save uses). Administrators only; the window must end after it starts. |
 | `sensor.eg4_tou_active_profile` | Today's profile: summer weekday, winter weekday or weekend / holiday. Attributes hold the plan, the timeline and the week ahead for the cards. |
 | `sensor.eg4_tou_controller_status` | Off, read-only or live (writing); `last_write` attribute shows the last write and any error. |
 | `sensor.eg4_tou_registers_out_of_sync` | How many inverter settings differ from the plan; `changes` lists them. |
+
+### Work alongside your own automations
+
+You do not have to hand everything over. Typical set-ups:
+
+* **Plan only, you apply it:** leave **Read-only mode** on and call `eg4_tou.get_plan` from your own automation,
+  then write the values however you like.
+* **Take over one thing:** switch off the matching **Manage ...** switch. For example, with *Manage hold windows*
+  off, your automation owns the AC First windows while this integration still manages the overnight charge.
+* **Own hold windows:** Configure > Hold windows sets them per profile (or `update_settings` with `hold`).
+  Hold windows you set apply instead of the derived ones. Remove them to go back.
+
+### Tariff format
+
+`eg4_tou.import_tariff` (and a custom tariff stored by the wizard) uses this shape:
+
+```yaml
+name: Utility B
+tariff:
+  seasons:                 # any number of seasons; dates are [month, day], inclusive, may wrap the new year
+    spring: {start: [3, 1], end: [5, 31], like: summer}   # like: which charge limit it uses (summer or winter)
+    summer: {start: [6, 1], end: [9, 30]}
+    autumn: {start: [10, 1], end: [2, 28]}                # a season not called summer/winter uses winter's limit unless it says like:
+  peaks:                   # up to 2 on-peak windows per season, same day, no overlap
+    spring: [["16:00", "19:00"]]
+    summer: [["14:00", "20:00"]]
+    autumn: [["17:00", "21:00"]]
+  peak_days: [0, 1, 2, 3, 4, 5]   # weekdays the peaks apply to (0 = Monday). Default: Monday to Friday.
+  offpeak_holidays: true          # public holidays (from your country/state) are all off-peak
+```
+
+Season names you invent show up as the profile (for example `spring`) and as sensor states. Prices and
+shoulder (mid-peak) rates are not modelled: only the windows you want to keep the battery out of.
 
 ## How data is updated
 
@@ -301,10 +363,15 @@ problem privately, are in [SECURITY.md](SECURITY.md).
 * The scan covers one /24 per network adapter and only port 502. Gateways on
   another subnet or VLAN, or on a non-standard port, need manual entry.
 
-* Custom tariffs: one or two seasons, 1-2 weekday on-peak windows each, weekends
-  and holidays optionally all off-peak. Peaks cannot cross midnight (split them
-  into two windows), and per-weekday or shoulder-rate tariffs are not modelled.
+* Custom tariffs: any number of seasons, 1-2 on-peak windows each, on the weekdays you choose;
+  holidays optionally all off-peak. Peaks cannot cross midnight (split them into two windows),
+  different windows on different weekdays, and prices or shoulder rates are not modelled.
   The one-hour spring/fall peak shift exists only in the BGE preset.
+* The wizard builds one- or two-season tariffs; more seasons, other peak days and `like:` go through
+  `eg4_tou.import_tariff`.
+* The charge-window, hold-window, charge-limit and power slots are what the planner knows. Inverters
+  with other kinds of settings (several charge windows with different limits, per-window power) are not
+  modelled.
 * The BGE spring/fall one-hour peak shift treats the end Sundays as exclusive.
   That is an assumption; confirm against your tariff sheet.
 * Winter peak-2 "top-up" (learns evening usage and adds a daytime charge) is

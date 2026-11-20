@@ -6,6 +6,7 @@ their schedule later from the integration's Configure button.
 from __future__ import annotations
 
 import calendar
+import hashlib
 import ipaddress
 import re
 from collections.abc import Mapping
@@ -16,15 +17,19 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import selector
+from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
 
-from .const import (CONF_COUNTRY, CONF_CREATE_DASHBOARD, CONF_CUSTOM, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT,
-                    DOMAIN, OPT_DRY_RUN, OPT_ENABLED)
+from .const import (BACKEND_ENTITIES, BACKEND_MODBUS, CONF_BACKEND, CONF_COUNTRY, CONF_CREATE_DASHBOARD, CONF_CUSTOM,
+                    CONF_ENTITIES, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT, DEFAULT_OPTIONS, DOMAIN,
+                    OPT_DRY_RUN, OPT_ENABLED, OPT_HOLD_CUSTOM, OPT_KW_MAX, OPT_POLL_MINUTES, OPT_SOC_GAP, OPT_SOC_MAX,
+                    OPT_SOC_MIN)
 from . import tariffs
+from .detect import Suggestion, suggest
+from .drivers import NUMBER_DOMAINS, ROLES, TIME_DOMAINS, TIME_SLOTS
 from .modbus import Eg4Modbus, ModbusConfig, ModbusError
 from homeassistant.exceptions import ServiceValidationError
 from .scanner import Found, async_scan, is_local_address
-from .planner import MAX_PEAKS_PER_DAY, PRESETS, tariff_from_custom, validate_peaks, winter_dates
+from .planner import MAX_PEAKS_PER_DAY, PRESETS, tariff_from_custom, validate_hold, validate_peaks, winter_dates
 
 TARIFF_CHOICES = {
     **{k: t.name for k, t in PRESETS.items()},
@@ -99,11 +104,55 @@ async def _clean_connection(hass: HomeAssistant, user_input: Mapping[str, Any]) 
 
 
 def _title(data: Mapping[str, Any]) -> str:
+    if data.get(CONF_BACKEND) == BACKEND_ENTITIES:
+        return "EG4 TOU (Home Assistant entities)"
     return f"EG4 TOU ({data[CONF_HOST]})"
 
 
 def _unique_id(data: Mapping[str, Any]) -> str:
+    if data.get(CONF_BACKEND) == BACKEND_ENTITIES:
+        ids = ",".join(sorted(str(v) for v in (data.get(CONF_ENTITIES) or {}).values()))
+        return "entities:" + hashlib.sha1(ids.encode()).hexdigest()[:12]
     return f"{data[CONF_HOST]}:{data[CONF_PORT]}:{data[CONF_UNIT]}"
+
+
+async def _clean_region(hass: HomeAssistant, user_input: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    country, subdiv, errors = await hass.async_add_executor_job(
+        holiday_region, str(user_input.get(CONF_COUNTRY) or ""), str(user_input.get(CONF_SUBDIV) or ""))
+    return {CONF_COUNTRY: country, CONF_SUBDIV: subdiv}, errors
+
+
+def detect_entities(hass: HomeAssistant) -> Suggestion | None:
+    """Pre-selection for the entity pickers: the inverter entities Home Assistant already knows about."""
+    devices = dr.async_get(hass)
+    records = []
+    for e in er.async_get(hass).entities.values():
+        dev = devices.async_get(e.device_id) if e.device_id else None
+        records.append({"entity_id": e.entity_id, "platform": e.platform, "device_id": e.device_id,
+                        "name": " ".join(filter(None, (e.name, e.original_name))), "disabled": e.disabled_by is not None,
+                        "device_name": (dev.name_by_user or dev.name) if dev else None})
+    return suggest(records)
+
+
+def _entity_fields(values: Mapping[str, str]) -> dict[Any, Any]:
+    """One optional drop-down per slot, each limited to the right kind of entity, pre-selected from `values`."""
+    fields: dict[Any, Any] = {}
+    for role, slot in ROLES.items():
+        domains = TIME_DOMAINS if slot in TIME_SLOTS else NUMBER_DOMAINS
+        sel = selector.EntitySelector(selector.EntitySelectorConfig(domain=list(domains)))
+        marker = vol.Optional(role, description={"suggested_value": values.get(role)}) if values.get(role) else vol.Optional(role)
+        fields[marker] = sel
+    return fields
+
+
+def _clean_entities(user_input: Mapping[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+    mapping = {r: str(user_input[r]) for r in ROLES if user_input.get(r)}
+    errors: dict[str, str] = {}
+    if not mapping:
+        errors["base"] = "no_entities"
+    elif len(set(mapping.values())) != len(mapping):
+        errors["base"] = "duplicate_entities"
+    return mapping, errors
 
 
 async def _probe(data: Mapping[str, Any]) -> bool:
@@ -260,9 +309,15 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
         """
         errors: dict[str, str] = {}
         rescan = bool(user_input and user_input.get("rescan"))
-        if user_input is not None and not rescan:
+        if user_input is not None and user_input.get("use_entities") and not rescan:
+            region, errors = await _clean_region(self.hass, user_input)
+            if not errors:
+                self._data = {CONF_BACKEND: BACKEND_ENTITIES, **region}
+                return await self.async_step_entities()
+        elif user_input is not None and not rescan:
             # raise_on_progress=False: an abandoned earlier attempt must not block a fresh one
             data, errors = await _clean_connection(self.hass, user_input)
+            data[CONF_BACKEND] = BACKEND_MODBUS
             if not errors:
                 await self.async_set_unique_id(_unique_id(data), raise_on_progress=False)
                 self._abort_if_unique_id_configured()
@@ -275,6 +330,10 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             self._found = {f.host: f for f in await async_scan(self.hass)}
         d = user_input or {}
         found = self._found
+        guess = detect_entities(self.hass)
+        entities_note = (f"\n\n**Already have your inverter in Home Assistant?** Found {len(guess.mapping)} matching entities "
+                         f"from **{guess.source}**. Tick *Use entities I already have* to use them instead of a gateway."
+                         if guess else "")
         def _what(f: Found) -> str:
             return "looks like an EG4 inverter" if f.looks_like_eg4 else "port 502 open, not confirmed as EG4"
 
@@ -298,14 +357,33 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_COUNTRY, default=d.get(CONF_COUNTRY) or self.hass.config.country or "US"): str,
             vol.Optional(CONF_SUBDIV, default=d.get(CONF_SUBDIV, "")): str,
             vol.Optional("rescan", default=False): bool,
+            vol.Optional("use_entities", default=False): bool,
         })
-        return _show(self, "user", schema, errors, {"scan_result": note, "guide_url": GUIDE_URL})
+        return _show(self, "user", schema, errors, {"scan_result": note + entities_note, "guide_url": GUIDE_URL})
+
+    async def async_step_entities(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Pick the Home Assistant entities that hold each setting. Pre-selected from what is detected."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            mapping, errors = _clean_entities(user_input)
+            if not errors:
+                self._data[CONF_ENTITIES] = mapping
+                await self.async_set_unique_id(_unique_id(self._data), raise_on_progress=False)
+                self._abort_if_unique_id_configured()
+                return await self._begin_tariff()
+        guess = detect_entities(self.hass)
+        values = user_input or (guess.mapping if guess else {})
+        note = (f"Pre-selected from **{guess.source}**. Check each one and change what is wrong." if guess
+                else "Nothing was detected automatically. Pick the entity for each setting you want managed.")
+        return _show(self, "entities", vol.Schema(_entity_fields(values)), errors, {"detected": note})
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Change the gateway address/port/unit or the holiday region without re-adding the integration.
         Tariff, mode and charge settings are kept."""
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
+        if entry.data.get(CONF_BACKEND) == BACKEND_ENTITIES:
+            return await self._reconfigure_entities(entry, user_input)
         if user_input is not None:
             data, errors = await _clean_connection(self.hass, user_input)
             if not errors:
@@ -328,6 +406,29 @@ class Eg4TouConfigFlow(_TariffSteps, config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_SUBDIV, default=d.get(CONF_SUBDIV) or ""): str,
         })
         return _show(self, "reconfigure", schema, errors)
+
+    async def async_step_reconfigure_entities(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self._reconfigure_entities(self._get_reconfigure_entry(), user_input)
+
+    async def _reconfigure_entities(self, entry: config_entries.ConfigEntry, user_input: dict[str, Any] | None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            mapping, errors = _clean_entities(user_input)
+            region, region_errors = await _clean_region(self.hass, user_input)
+            errors.update(region_errors)
+            if not errors:
+                data = {CONF_BACKEND: BACKEND_ENTITIES, CONF_ENTITIES: mapping, **region}
+                uid = _unique_id(data)
+                if any(e.unique_id == uid for e in self._async_current_entries() if e.entry_id != entry.entry_id):
+                    errors["base"] = "already_configured"
+                else:
+                    return self.async_update_reload_and_abort(entry, unique_id=uid, data_updates=data)
+        d = {**entry.data, **(user_input or {})}
+        values = user_input or entry.data.get(CONF_ENTITIES) or {}
+        schema = vol.Schema({**_entity_fields(values),
+                             vol.Required(CONF_COUNTRY, default=d.get(CONF_COUNTRY) or "US"): str,
+                             vol.Optional(CONF_SUBDIV, default=d.get(CONF_SUBDIV) or ""): str})
+        return _show(self, "reconfigure_entities", schema, errors)
 
     async def _tariff_done(self, key: str, custom: dict[str, Any] | None) -> ConfigFlowResult:
         self._data[CONF_TARIFF] = key
@@ -375,7 +476,57 @@ class Eg4TouOptionsFlow(_TariffSteps, config_entries.OptionsFlow):
     """Configure button: re-run the tariff steps and reload."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return self.async_show_menu(step_id="init", menu_options=["edit_tariff", "limits", "hold"])
+
+    async def async_step_edit_tariff(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._begin_tariff()
+
+    async def async_step_limits(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Limits and timing: what your hardware allows, how often to check. The defaults suit the 12000XP."""
+        from .services import validate
+        o = self.config_entry.options
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            patch = {OPT_POLL_MINUTES: int(user_input[OPT_POLL_MINUTES]), OPT_SOC_GAP: int(user_input[OPT_SOC_GAP]),
+                     OPT_SOC_MIN: int(user_input[OPT_SOC_MIN]), OPT_SOC_MAX: int(user_input[OPT_SOC_MAX]),
+                     OPT_KW_MAX: float(user_input[OPT_KW_MAX])}
+            try:
+                new = validate(dict(o), patch)
+            except ServiceValidationError as exc:
+                errors["base"] = str(exc.translation_key)
+            else:
+                return self.async_create_entry(data=new)
+        d = {k: (user_input or o).get(k, DEFAULT_OPTIONS[k]) for k in
+             (OPT_POLL_MINUTES, OPT_SOC_GAP, OPT_SOC_MIN, OPT_SOC_MAX, OPT_KW_MAX)}
+        def box(lo: float, hi: float, step: float, unit: str) -> selector.NumberSelector:
+            return selector.NumberSelector(selector.NumberSelectorConfig(
+                min=lo, max=hi, step=step, unit_of_measurement=unit, mode=selector.NumberSelectorMode.BOX))
+        schema = vol.Schema({
+            vol.Required(OPT_POLL_MINUTES, default=d[OPT_POLL_MINUTES]): box(1, 120, 1, "min"),
+            vol.Required(OPT_SOC_GAP, default=d[OPT_SOC_GAP]): box(0, 50, 1, "%"),
+            vol.Required(OPT_SOC_MIN, default=d[OPT_SOC_MIN]): box(0, 99, 1, "%"),
+            vol.Required(OPT_SOC_MAX, default=d[OPT_SOC_MAX]): box(1, 100, 1, "%"),
+            vol.Required(OPT_KW_MAX, default=d[OPT_KW_MAX]): box(1, 20, 0.5, "kW"),
+        })
+        return _show(self, "limits", schema, errors)
+
+    async def async_step_hold(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Hold windows of your own, per profile. Empty = derive them from the on-peak hours (the default)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            raw = user_input.get(OPT_HOLD_CUSTOM) or {}
+            try:
+                custom = {str(k): [[_hhmm(str(a)), _hhmm(str(b))] for a, b in v] for k, v in dict(raw).items()}
+                bad = next((e for w in custom.values() if (e := validate_hold(w))), None)
+            except (TypeError, ValueError):
+                custom, bad = {}, "bad_hold"
+            if bad:
+                errors["base"] = bad
+            else:
+                return self.async_create_entry(data={**self.config_entry.options, OPT_HOLD_CUSTOM: custom})
+        current = (user_input or {}).get(OPT_HOLD_CUSTOM) or self.config_entry.options.get(OPT_HOLD_CUSTOM) or {}
+        schema = vol.Schema({vol.Optional(OPT_HOLD_CUSTOM, description={"suggested_value": current}): selector.ObjectSelector()})
+        return _show(self, "hold", schema, errors)
 
     async def _tariff_done(self, key: str, custom: dict[str, Any] | None) -> ConfigFlowResult:
         if custom is None:   # the ready-made example: just switch to it

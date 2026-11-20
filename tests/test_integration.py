@@ -207,6 +207,8 @@ async def test_options_flow_changes_tariff(hass: HomeAssistant, gateway):
     await hass.async_block_till_done()
     f = hass.config_entries.options
     r = await f.async_init(e.entry_id)
+    assert r["type"] == "menu"
+    r = await f.async_configure(r["flow_id"], {"next_step_id": "edit_tariff"})
     assert r["step_id"] == "tariff"
     r = await f.async_configure(r["flow_id"], {"tariff": "single", "offpeak_weekends": True})
     r = await f.async_configure(r["flow_id"], {"kind": "winter"})
@@ -495,7 +497,7 @@ async def test_reconfigure_changes_gateway_and_keeps_settings(hass: HomeAssistan
         assert e.data["port"] == other.port and e.data["tariff"] == "bge_rl"
         assert e.unique_id == f"127.0.0.1:{other.port}:1"
         assert e.options["dry_run"] is True
-        assert e.runtime_data.client._cfg.port == other.port, "reloaded with the new gateway"
+        assert e.runtime_data.driver.client._cfg.port == other.port, "reloaded with the new gateway"
         assert other.writes == []
     finally:
         other.server.close()
@@ -537,14 +539,14 @@ async def _setup(hass, gateway, **options):
 async def test_unreachable_inverter_makes_entities_unavailable_then_recovers(hass: HomeAssistant, gateway):
     e = await _setup(hass, gateway)
     c = e.runtime_data
-    c.client._cfg.attempts, c.client._cfg.pause = 1, 0
-    real_port = c.client._cfg.port
-    c.client._cfg.port = 1                                    # nothing listens there
+    c.driver.client._cfg.attempts, c.driver.client._cfg.pause = 1, 0
+    real_port = c.driver.client._cfg.port
+    c.driver.client._cfg.port = 1                                    # nothing listens there
     await c.async_refresh()
     assert hass.states.get("sensor.eg4_tou_controller_status").state == "unavailable"
     assert hass.states.get("switch.eg4_tou_read_only_mode").state == "unavailable"
     assert c.last_exception.translation_key == "read_failed"   # message comes from strings (exceptions)
-    c.client._cfg.port = real_port
+    c.driver.client._cfg.port = real_port
     await c.async_refresh()
     assert hass.states.get("sensor.eg4_tou_controller_status").state == "off"
 
@@ -554,7 +556,7 @@ async def test_refused_write_is_reported_and_retried(hass: HomeAssistant, gatewa
     e = await _setup(hass, gateway, enabled=True, dry_run=False)
     c = e.runtime_data
     gateway.regs[66] = 30                    # someone changed the inverter: one register to put back
-    with patch.object(c.client, "write", AsyncMock(side_effect=ModbusError("modbus exception fc=6 code=2"))):
+    with patch.object(c.driver.client, "write", AsyncMock(side_effect=ModbusError("modbus exception fc=6 code=2"))):
         await c.async_refresh()
     status = hass.states.get("sensor.eg4_tou_controller_status")
     assert "failed" in status.attributes["last_write"] and "retry next cycle" in status.attributes["last_write"]
@@ -564,7 +566,7 @@ async def test_write_ok_but_reread_fails_keeps_the_write_result(hass: HomeAssist
     from custom_components.eg4_tou.modbus import ModbusError
     e = await _setup(hass, gateway, enabled=True, dry_run=True)
     c = e.runtime_data
-    real_read = c.client.read
+    real_read = c.driver.client.read
     calls = {"n": 0}
 
     async def read_then_fail(start, count=1):
@@ -577,7 +579,7 @@ async def test_write_ok_but_reread_fails_keeps_the_write_result(hass: HomeAssist
     await hass.async_block_till_done()
     calls["n"] = 0
     gateway.regs[66] = 30                    # drift, so this cycle writes
-    with patch.object(c.client, "read", read_then_fail):
+    with patch.object(c.driver.client, "read", read_then_fail):
         await c.async_refresh()
     assert c.data.last_write.endswith("wrote regs [66]") and gateway.regs[66] != 30
     assert c.describe(66, None) == "?"
@@ -985,6 +987,8 @@ async def test_configure_adds_a_named_tariff_and_can_go_back_to_the_example(hass
     e = await _setup(hass, gateway)
     f = hass.config_entries.options
     r = await f.async_init(e.entry_id)
+    assert r["type"] == "menu"
+    r = await f.async_configure(r["flow_id"], {"next_step_id": "edit_tariff"})
     r = await f.async_configure(r["flow_id"], {"tariff": "single", "offpeak_weekends": True})
     r = await f.async_configure(r["flow_id"], {"kind": "winter"})
     r = await f.async_configure(r["flow_id"], {"start": "18:00:00", "end": "22:00:00", "add_another": False})
@@ -996,5 +1000,6 @@ async def test_configure_adds_a_named_tariff_and_can_go_back_to_the_example(hass
     lib, active = _lib(hass, e)
     assert active == "Plan B" and lib["Plan B"]["custom"]["peaks"] == {"winter": [["18:00", "22:00"]]}
     r = await f.async_init(e.entry_id)
+    r = await f.async_configure(r["flow_id"], {"next_step_id": "edit_tariff"})
     r = await f.async_configure(r["flow_id"], {"tariff": "bge_rl", "offpeak_weekends": True, "offpeak_holidays": True})
     assert r["type"] == "create_entry" and e.options["active_tariff"] == tariffs.EXAMPLE_NAME and "Plan B" in e.options["tariffs"]
