@@ -5,16 +5,19 @@
       "hash": "ec1f942d0de26af0d2eb5957766179dbd890166a1dfe792126d125047936b941"
     },
     "dashboard-and-cards": {
-      "hash": "0376df11327faf44a5024ad582048221969b8cc3c5772858a2329ce46d6c0c8b"
+      "hash": "6c2cce6101667dbccf3aa2eeef256c9c59b9610a12a53e7402e157a33f9d36ab"
     },
     "device-and-entities": {
-      "hash": "eaf7b128142b1a82d33b458cc31c5a156632dbd0ce9851c00cf26c4a7479bb91"
+      "hash": "8db41668561b4c56fb850eb4c7e2d9168a234f0a17d8af4f2a69333fab13e333"
     },
     "schedule-logic": {
-      "hash": "660c77ae64934cb3d2dd389d8099e36647cffb74ec70232ea14bfb26cd216f3f"
+      "hash": "1b24e0f880679573b430d37323a4d05c7d2e061704703de0f8c14a3c8b1f63b2"
     },
     "setup-wizard": {
-      "hash": "67e73506ac996e1fe8efd7e7f603f0c8811c6ef0017c4be169a991ec0408eaa5"
+      "hash": "3f6d64a1241dd15d50315d7880fcb559cca10578b4f5a08e10cc76736dccca4e"
+    },
+    "storm-prep": {
+      "hash": "98a57b1bdff3e72883893c1b5f5c777685ef6f50599df1e235dc9527c80abd52"
     }
   }
 }
