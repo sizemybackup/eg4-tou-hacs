@@ -334,7 +334,7 @@
           "storm_zones": "Comma separated, for example ORZ101, ORC007 (a forecast zone and a county code). Leave empty outside the US.",
           "storm_weather": "A weather entity with an hourly forecast. Strong wind or frozen precipitation gives a recommendation, but never starts storm prep by itself.",
           "storm_notify": "For example notify.mobile_app_your_phone. Leave empty to get notifications in Home Assistant only.",
-          "storm_grid_down": "A binary sensor that is on while the grid is down. Storm prep then waits for the grid before ending.",
+          "storm_grid_down": "A binary sensor that is on only while utility power is out, for example a template on grid voltage. Do not use an inverter Off-Grid sensor: on off-grid models such as the 12000XP it also reads on while the house runs from the battery. Storm prep then waits for the grid before ending.",
           "storm_charge_kw": "AC charge power during storm prep (kept within your limits).",
           "storm_start_soc_max": "The inverter refuses a charge start level above this. 90 suits the EG4 12000XP and 15kXP."
         }

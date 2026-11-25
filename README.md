@@ -124,12 +124,25 @@ mode, or not managing the charge windows, charge limits or charge power. The swi
 | NWS zone codes (US) | Active National Weather Service alerts, checked every 10 minutes. High wind, winter storm, ice, blizzard, hurricane and tropical storm warnings and watches mean *prep*; advisories, thunderstorm and tornado alerts mean *watch*. |
 | Weather forecast | A second opinion from any weather entity with an hourly forecast: sustained wind of 25 mph (watch) or 35 mph (prep), or frozen precipitation, in the next 48 hours. |
 | Phone message action | For example `notify.mobile_app_your_phone`, with Prep now / Skip / Cancel buttons. |
-| Grid-down sensor | A binary sensor that is on while the grid is down. |
+| Grid-down sensor | A binary sensor that is on only while utility power is out. See below: an inverter's Off-Grid sensor is the wrong one. |
 | Storm charge power, highest charge start level | Hardware limits. 90% suits the 12000XP and 15kXP. |
 
 With **Storm prep automatic** on, only a National Weather Service *prep* alert starts a session (never
 the forecast alone), once the storm is under 24 hours away; charging then follows the windows above.
 **Skip this storm** (or turning the switch off) leaves that storm alone.
+
+**Which grid-down sensor?** Not an "Off-Grid" or "operating state" sensor. On off-grid models such
+as the 12000XP those describe the inverter's mode, and read off-grid whenever the house runs from
+the battery, even with utility power present. Use grid voltage instead. A template binary sensor
+(**Settings > Devices & services > Helpers > Create helper > Template > Binary sensor**), with your
+own sensor name and a threshold that suits your supply (about 200 V for US 240 V service):
+
+```
+{% set v = states('sensor.my_grid_voltage') %}
+{{ is_number(v) and v | float < 200 }}
+```
+
+It reads off while the voltage is unknown, so a missed reading does not hold storm prep on.
 
 Privacy: nothing is requested from the weather service unless you enter zone codes, and only those
 codes are sent.
