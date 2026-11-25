@@ -8,9 +8,9 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_HOST
+from .const import CONF_HOST, OPT_STORM_NOTIFY, OPT_STORM_ZONES
 
-TO_REDACT = {CONF_HOST}
+TO_REDACT = {CONF_HOST, OPT_STORM_ZONES, OPT_STORM_NOTIFY}   # the zones say roughly where the user lives
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
@@ -18,7 +18,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
     d = c.data
     out: dict[str, Any] = {
         "config": async_redact_data(dict(entry.data), TO_REDACT),
-        "options": dict(entry.options),
+        "options": async_redact_data(dict(entry.options), TO_REDACT),
         "last_update_success": c.last_update_success,
         "last_exception": repr(c.last_exception) if c.last_exception else None,
     }

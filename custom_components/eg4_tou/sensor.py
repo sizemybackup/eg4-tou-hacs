@@ -7,8 +7,10 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
-from .const import EDITABLE
+from . import storm
+from .const import EDITABLE, OPT_STORM_AUTO, OPT_STORM_TARGET
 from .coordinator import TouConfigEntry, TouCoordinator
 from .entity import TouEntity
 from .modbus import WRITE_LIMITS
@@ -20,7 +22,7 @@ PARALLEL_UPDATES = 0  # read-only; the coordinator does all inverter I/O
 async def async_setup_entry(hass: HomeAssistant, entry: TouConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
     c = entry.runtime_data
-    async_add_entities([ProfileSensor(c), PendingSensor(c), StatusSensor(c)])
+    async_add_entities([ProfileSensor(c), PendingSensor(c), StatusSensor(c), StormSensor(c)])
 
 
 class ProfileSensor(TouEntity, SensorEntity):
@@ -97,3 +99,47 @@ class StatusSensor(TouEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"last_write": self.coordinator.data.last_write}
+
+
+class StormSensor(TouEntity, SensorEntity):
+    """The storm recommendation, with what the dashboard shows about it."""
+
+    _domain = "sensor"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = storm.LEVELS
+    _unrecorded_attributes = frozenset({"alerts"})
+
+    def __init__(self, c: TouCoordinator) -> None:
+        super().__init__(c, "storm", "Storm recommendation")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.storm.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def available(self) -> bool:
+        return True   # weather and storm state do not depend on reaching the inverter
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.storm.data.recommendation.level
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        rec = self.coordinator.storm.data.recommendation
+        session = self.coordinator.storm.session()
+        options = self.coordinator.entry.options
+        now = dt_util.now()
+
+        def iso(ts: float) -> str | None:
+            return dt_util.as_local(dt_util.utc_from_timestamp(ts)).isoformat() if ts else None
+
+        return {"headline": rec.headline, "source": rec.source,
+                "onset": rec.onset.isoformat() if rec.onset else None,
+                "ends": rec.ends.isoformat() if rec.ends else None,
+                "alerts": list(rec.alerts),
+                "prep": session.prep, "automatic": bool(options[OPT_STORM_AUTO]),
+                "target_soc": int(options[OPT_STORM_TARGET]),
+                "until": iso(session.until),
+                "skipped": not session.prep and rec.level == storm.PREP
+                and not storm.is_new(rec, session.handled, now)}

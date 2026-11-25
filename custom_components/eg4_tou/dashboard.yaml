@@ -108,6 +108,47 @@ views:
               {% for c in ch %}- {{ c }}
               {% endfor %}{% else %}Everything the integration manages matches the plan.{% endif %}
 
+      # ---- Storm prep -------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: Storm prep
+            icon: mdi:weather-lightning-rainy
+          - type: markdown
+            content: |-
+              {% set ents = integration_entities('eg4_tou') %}
+              {% set s = ents | select('match', 'sensor[.].*_storm_recommendation$') | list | first | default('') %}
+              {% set rec = states(s) %}
+              {% set o = state_attr(s, 'onset') %}
+              {% set e = state_attr(s, 'ends') %}
+              **{{ {'prep': 'Prep recommended', 'watch': 'Keep an eye on the weather', 'clear': 'No storm expected', 'not_configured': 'No weather source configured'}.get(rec, 'Weather data unavailable') }}**
+              {% if state_attr(s, 'headline') %}
+
+              {{ state_attr(s, 'headline') }}{% if o %}
+
+              From {{ (o | as_datetime | as_local).strftime('%a %H:%M') }}{% endif %}{% if e %} to {{ (e | as_datetime | as_local).strftime('%a %H:%M') }}{% endif %}{% endif %}
+
+              {% if state_attr(s, 'prep') %}**Storm prep is on:** charging to {{ state_attr(s, 'target_soc') }}% in off-peak hours until {{ (state_attr(s, 'until') | as_datetime | as_local).strftime('%a %H:%M') }}.{% elif state_attr(s, 'skipped') %}This storm is skipped.{% elif state_attr(s, 'automatic') %}Automatic mode starts storm prep for National Weather Service storm warnings and watches.{% else %}Turn on Storm prep to charge ahead of a storm.{% endif %}
+
+              {% if rec == 'not_configured' %}Add your weather zones under Settings > Devices & services > EG4 Local TOU Manager > Configure > Storm prep.{% endif %}
+          - type: tile
+            entity: switch.eg4_tou_storm_prep
+            name: Storm prep
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.eg4_tou_storm_prep_automatic
+            name: Automatic
+            features:
+              - type: toggle
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - entity: number.eg4_tou_storm_prep_charge_target
+                name: Charge target
+              - entity: button.eg4_tou_skip_this_storm
+                name: Skip this storm
+
       # ---- 3. Controls ------------------------------------------------------
       - type: grid
         cards:

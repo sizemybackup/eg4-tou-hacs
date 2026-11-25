@@ -22,7 +22,9 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er, 
 from .const import (BACKEND_ENTITIES, BACKEND_MODBUS, CONF_BACKEND, CONF_COUNTRY, CONF_CREATE_DASHBOARD, CONF_CUSTOM,
                     CONF_ENTITIES, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_TARIFF, CONF_UNIT, DEFAULT_OPTIONS, DOMAIN,
                     OPT_DRY_RUN, OPT_ENABLED, OPT_HOLD_CUSTOM, OPT_KW_MAX, OPT_POLL_MINUTES, OPT_SOC_GAP, OPT_SOC_MAX,
-                    OPT_SOC_MIN)
+                    OPT_SOC_MIN, OPT_STORM_GRID, OPT_STORM_KW, OPT_STORM_NOTIFY, OPT_STORM_START_MAX, OPT_STORM_WEATHER,
+                    OPT_STORM_ZONES)
+from .storm import parse_zones
 from . import tariffs
 from .detect import Suggestion, suggest
 from .drivers import NUMBER_DOMAINS, ROLES, TIME_DOMAINS, TIME_SLOTS
@@ -38,6 +40,7 @@ TARIFF_CHOICES = {
 }
 _TIME = selector.TimeSelector()
 GUIDE_URL = "https://sizemybackup.com/eg4-12000xp-home-assistant-local-guide.html"
+ZONE_URL = "https://www.weather.gov/pimar/PubZone"
 
 
 def _hhmm(value: str) -> str:
@@ -476,7 +479,7 @@ class Eg4TouOptionsFlow(_TariffSteps, config_entries.OptionsFlow):
     """Configure button: re-run the tariff steps and reload."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=["edit_tariff", "limits", "hold"])
+        return self.async_show_menu(step_id="init", menu_options=["edit_tariff", "limits", "hold", "storm"])
 
     async def async_step_edit_tariff(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._begin_tariff()
@@ -527,6 +530,42 @@ class Eg4TouOptionsFlow(_TariffSteps, config_entries.OptionsFlow):
         current = (user_input or {}).get(OPT_HOLD_CUSTOM) or self.config_entry.options.get(OPT_HOLD_CUSTOM) or {}
         schema = vol.Schema({vol.Optional(OPT_HOLD_CUSTOM, description={"suggested_value": current}): selector.ObjectSelector()})
         return _show(self, "hold", schema, errors)
+
+    async def async_step_storm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Where storm warnings come from, who to tell, and how fast to charge. Everything is optional."""
+        o = self.config_entry.options
+        errors: dict[str, str] = {}
+        texts = (OPT_STORM_ZONES, OPT_STORM_WEATHER, OPT_STORM_NOTIFY, OPT_STORM_GRID)
+        if user_input is not None:
+            patch: dict[str, Any] = {k: str(user_input.get(k) or "").strip() for k in texts}
+            zones = parse_zones(patch[OPT_STORM_ZONES])
+            if zones is None:
+                errors[OPT_STORM_ZONES] = "storm_zones_invalid"
+            if patch[OPT_STORM_NOTIFY] and not re.match(r"^notify\.[a-z0-9_]+$", patch[OPT_STORM_NOTIFY]):
+                errors[OPT_STORM_NOTIFY] = "storm_notify_invalid"
+            if zones is not None and not errors:
+                patch[OPT_STORM_ZONES] = ",".join(zones)
+                patch[OPT_STORM_KW] = float(user_input[OPT_STORM_KW])
+                patch[OPT_STORM_START_MAX] = int(user_input[OPT_STORM_START_MAX])
+                return self.async_create_entry(data={**o, **patch})
+        d = {**o, **(user_input or {})}
+
+        def box(lo: float, hi: float, step: float, unit: str) -> selector.NumberSelector:
+            return selector.NumberSelector(selector.NumberSelectorConfig(
+                min=lo, max=hi, step=step, unit_of_measurement=unit, mode=selector.NumberSelectorMode.BOX))
+
+        def optional(key: str) -> vol.Optional:
+            return vol.Optional(key, description={"suggested_value": d.get(key) or None})
+
+        schema = vol.Schema({
+            optional(OPT_STORM_ZONES): str,
+            optional(OPT_STORM_WEATHER): selector.EntitySelector(selector.EntitySelectorConfig(domain="weather")),
+            optional(OPT_STORM_NOTIFY): str,
+            optional(OPT_STORM_GRID): selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor")),
+            vol.Required(OPT_STORM_KW, default=d[OPT_STORM_KW]): box(1, 20, 0.5, "kW"),
+            vol.Required(OPT_STORM_START_MAX, default=d[OPT_STORM_START_MAX]): box(10, 100, 1, "%"),
+        })
+        return _show(self, "storm", schema, errors, {"zone_url": ZONE_URL})
 
     async def _tariff_done(self, key: str, custom: dict[str, Any] | None) -> ConfigFlowResult:
         if custom is None:   # the ready-made example: just switch to it

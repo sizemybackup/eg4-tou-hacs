@@ -18,11 +18,13 @@ from .const import (
     BACKEND_ENTITIES, CONF_BACKEND, CONF_COUNTRY, CONF_ENTITIES, CONF_HOST, CONF_PORT, CONF_SUBDIV, CONF_UNIT, DEFAULT_OPTIONS,
     DOMAIN, OPT_AC_KW, OPT_CHARGE_END, OPT_CHARGE_START, OPT_DRY_RUN, OPT_ENABLED,
     OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, OPT_HOLD_CUSTOM, OPT_POLL_MINUTES,
-    OPT_SOC_GAP, OPT_TARIFFS, write_groups,
+    OPT_SOC_GAP, OPT_STORM_KW, OPT_STORM_PREP, OPT_STORM_START_MAX, OPT_STORM_TARGET, OPT_STORM_UNTIL, OPT_TARIFFS,
+    limits, write_groups,
 )
 from .drivers import GROUPS, Driver, DriverError, EntityDriver, ModbusDriver
 from .modbus import Eg4Modbus, ModbusConfig, unpack_time
 from .planner import Plan, Settings, Tariff, build_plan, peak_edit_info, validate_hold, week_schedule
+from .storm_manager import StormManager
 from .tariffs import active_of, base_of, effective_of
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,7 +49,12 @@ class TouData:
 
 
 def settings_from_options(o: Mapping[str, Any]) -> Settings:
+    (soc_lo, soc_hi), (kw_lo, kw_hi) = limits(o)
     return Settings(
+        storm=bool(o.get(OPT_STORM_PREP, False)),
+        storm_end_soc=min(max(int(o.get(OPT_STORM_TARGET, 100)), soc_lo), soc_hi),
+        storm_kw=min(max(float(o.get(OPT_STORM_KW, 10.0)), kw_lo), kw_hi),
+        storm_start_max=int(o.get(OPT_STORM_START_MAX, 90)),
         charge_window=(o[OPT_CHARGE_START], o[OPT_CHARGE_END]),
         end_soc={"summer": int(o[OPT_END_SOC_SUMMER]), "winter": int(o[OPT_END_SOC_WINTER]),
                  "offpeak": int(o[OPT_END_SOC_OFFPEAK])},
@@ -70,6 +77,7 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
     base_tariff: Tariff    # the active tariff as defined (preset or custom)
     tariff: Tariff         # ... with the user's own on-peak hours applied
     _spec: dict[str, Any]
+    storm: StormManager
 
     def __init__(self, hass: HomeAssistant, entry: TouConfigEntry) -> None:
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN,
@@ -114,6 +122,9 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         label = f"Holiday: {holiday}" if holiday else ("Weekend" if day.weekday() >= 5 else "Off-peak day" if no_peak_day else "Workday")
         return offpeak, label
 
+    def is_offpeak_day(self, day: date) -> bool:
+        return self._day_info(day)[0]
+
     def _mode(self) -> str:
         o = self.entry.options
         if not o[OPT_ENABLED]:
@@ -148,8 +159,10 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         peaks = ", ".join(f"{a}-{b}" for a, b in peak_list) if not offpeak else "none (off-peak day)"
         settings = settings_from_options(self.entry.options)
         facts = {"mode": mode, "out_of_sync": len(pending), "start_soc": plan.registers[160],
-                 "end_soc": plan.registers[161], "ac_kw": plan.registers[66] / 10}
-        week = week_schedule(today, self.tariff, settings, self._day_info)
+                 "end_soc": plan.registers[161], "ac_kw": plan.registers[66] / 10, "storm": plan.storm}
+        until = float(self.entry.options.get(OPT_STORM_UNTIL, 0))
+        storm_last = dt_util.as_local(dt_util.utc_from_timestamp(until)).date() if until else None
+        week = week_schedule(today, self.tariff, settings, self._day_info, storm_last=storm_last)
         return TouData(current, plan, pending, mode, self._last_write, peaks, peak_list, week, facts,
                        peak_edit=self._peak_edit(today), managed=managed)
 

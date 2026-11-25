@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from homeassistant.helpers import config_validation as cv
 
 from .coordinator import TouCoordinator
+from .storm_manager import StormManager
 from .const import CONF_CREATE_DASHBOARD, CONF_DASHBOARD_URL, DEFAULT_OPTIONS, DOMAIN, PLATFORMS
 from . import services
 from .tariffs import initial_library
@@ -49,6 +50,8 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
     await coordinator.async_load_holidays()
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    coordinator.storm = StormManager(hass, entry, coordinator)
+    await coordinator.storm.async_start()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _maybe_create_dashboard(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
@@ -56,7 +59,9 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
 
 
 async def _options_updated(hass: "HomeAssistant", entry: "ConfigEntry") -> None:
-    await entry.runtime_data.async_refresh()   # now, not debounced: a second quick save must show up too
+    coordinator = entry.runtime_data   # held here: a reload can drop runtime_data while we await
+    await coordinator.async_refresh()   # now, not debounced: a second quick save must show up too
+    await coordinator.storm.async_options_updated()
 
 
 async def async_unload_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:

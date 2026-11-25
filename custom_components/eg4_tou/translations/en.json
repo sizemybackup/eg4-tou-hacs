@@ -229,7 +229,8 @@
         "menu_options": {
           "edit_tariff": "Tariff: add or change a tariff",
           "limits": "Limits and timing: what your hardware allows, how often to check",
-          "hold": "Hold windows: set your own instead of deriving them from the peaks"
+          "hold": "Hold windows: set your own instead of deriving them from the peaks",
+          "storm": "Storm prep: weather alerts, phone messages and charging speed"
         }
       },
       "tariff": {
@@ -317,6 +318,26 @@
         "data_description": {
           "hold_custom": "Per profile, up to 3 [start, end] windows. Leave empty to derive them from the on-peak hours."
         }
+      },
+      "storm": {
+        "title": "Storm prep",
+        "description": "Storm prep charges the battery to a storm target in every off-peak hour (all day on weekends and holidays), then returns to the normal schedule 3 hours after the storm. The **Storm prep** switch works without any of the settings below.\n\nIn the US, enter your National Weather Service zone codes to get recommendations and allow automatic mode. Only those codes are sent to api.weather.gov, and nothing is sent if the box is empty. Find your codes at {zone_url} .",
+        "data": {
+          "storm_zones": "NWS zone codes",
+          "storm_weather": "Weather forecast (second opinion)",
+          "storm_notify": "Phone message action",
+          "storm_grid_down": "Grid-down sensor",
+          "storm_charge_kw": "Storm charge power",
+          "storm_start_soc_max": "Highest charge start level"
+        },
+        "data_description": {
+          "storm_zones": "Comma separated, for example MDZ508, MDC025 (a forecast zone and a county code). Leave empty outside the US.",
+          "storm_weather": "A weather entity with an hourly forecast. Strong wind or frozen precipitation gives a recommendation, but never starts storm prep by itself.",
+          "storm_notify": "For example notify.mobile_app_your_phone. Leave empty to get notifications in Home Assistant only.",
+          "storm_grid_down": "A binary sensor that is on while the grid is down. Storm prep then waits for the grid before ending.",
+          "storm_charge_kw": "AC charge power during storm prep (kept within your limits).",
+          "storm_start_soc_max": "The inverter refuses a charge start level above this. 90 suits the EG4 12000XP and 15kXP."
+        }
       }
     },
     "error": {
@@ -335,7 +356,9 @@
       "bad_hold": "That is not a list of windows like [\"00:00\", \"07:00\"].",
       "too_many_hold": "At most 3 hold windows per profile.",
       "hold_order": "Each hold window must end after it starts.",
-      "hold_overlap": "Hold windows must not overlap."
+      "hold_overlap": "Hold windows must not overlap.",
+      "storm_zones_invalid": "Use zone codes like MDZ508 or MDC025, separated by commas.",
+      "storm_notify_invalid": "Use an action name like notify.mobile_app_your_phone."
     }
   },
   "entity": {
@@ -358,6 +381,16 @@
           "read_only": "Read-only",
           "live": "Live (writing)"
         }
+      },
+      "storm": {
+        "name": "Storm recommendation",
+        "state": {
+          "prep": "Prep recommended",
+          "watch": "Keep watch",
+          "clear": "No storm",
+          "unknown": "Unavailable",
+          "not_configured": "Not configured"
+        }
       }
     },
     "switch": {
@@ -378,6 +411,12 @@
       },
       "write_power": {
         "name": "Manage charge power"
+      },
+      "storm_prep": {
+        "name": "Storm prep"
+      },
+      "storm_auto": {
+        "name": "Storm prep automatic"
       }
     },
     "number": {
@@ -392,6 +431,9 @@
       },
       "ac_charge_kw": {
         "name": "AC charge power"
+      },
+      "storm_target_soc": {
+        "name": "Storm prep charge target"
       }
     },
     "time": {
@@ -405,6 +447,11 @@
     "select": {
       "tariff": {
         "name": "Tariff"
+      }
+    },
+    "button": {
+      "storm_skip": {
+        "name": "Skip this storm"
       }
     }
   },
@@ -503,7 +550,7 @@
         },
         "write_groups": {
           "name": "Write groups",
-          "description": "Which kinds of setting this integration may write: charge_window, hold_windows, soc, power. For example {\"hold_windows\": false} leaves the hold windows to you."
+          "description": "Which kinds of setting this integration may write: charge_window, hold_windows, soc, power. For example, setting hold_windows to false leaves the hold windows to you."
         },
         "hold": {
           "name": "Custom hold windows",
