@@ -1,6 +1,6 @@
-# EG4 Local TOU Manager: ready-made dashboard (core cards plus the integration's own two cards).
+# EG4 Local TOU Manager: ready-made dashboard (core cards plus the integration's own cards).
 #
-# Needs integration v0.6.0+ for the two custom cards (the integration loads them by itself).
+# Needs integration v0.12.0+ for the custom cards (the integration loads them by itself).
 # The setup wizard creates this dashboard for you (v0.10.0+). To add it by hand instead:
 # Settings > Dashboards > Add dashboard > "New dashboard from scratch", open it,
 # three dots > Edit dashboard > three dots > Raw configuration editor, and paste this file.
@@ -36,6 +36,13 @@ views:
             # time_format: 12                                           # or 24
           # 24-hour timeline; finds its sensor by itself and has its own title.
           - type: custom:eg4-tou-timeline-card
+          # Storm prep
+          - type: heading
+            heading: Storm prep
+            icon: mdi:weather-lightning-rainy
+          # Recommendation, alerts and one row of buttons: Prep, Auto, Skip and the charge target.
+          # Add battery_soc_entity: sensor.my_battery_soc to show the battery level.
+          - type: custom:eg4-tou-storm-card
 
       # ---- 2. Is the inverter doing what the plan says? --------------------
       - type: grid

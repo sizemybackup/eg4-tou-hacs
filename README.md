@@ -52,7 +52,7 @@ drawn underneath if they differ from the plan), a **Today's rules** table showin
 rule the plan, what the inverter holds now and whether they match, the list of pending
 changes, and all the controls.
 
-Times on both cards follow your Home Assistant profile (Profile, *Time format*: 12-hour or 24-hour). Set
+Times on the cards follow your Home Assistant profile (Profile, *Time format*: 12-hour or 24-hour). Set
 `time_format: 12` or `24` on a card to override that for one card.
 
 **Editing the schedule on the timeline card (administrators).** Press **Edit** on the timeline. Drag the handles
@@ -90,6 +90,50 @@ Dashboards, Add dashboard, *New dashboard from scratch*; open it, three dots, Ed
 The rules tables find the integration's entities by themselves. Tiles and controls use
 the default entity ids (`sensor.eg4_tou_*`, `switch.eg4_tou_*`, ...); if yours differ,
 find/replace them in the raw editor.
+
+## Storm prep
+
+Charge the battery ahead of a storm, then go back to your normal schedule by itself.
+
+The **storm card** on the ready-made dashboard shows the recommendation and puts **Prep**, **Auto**,
+**Skip** and the **charge target** on one row. To add it to a dashboard of your own:
+
+```yaml
+type: custom:eg4-tou-storm-card
+battery_soc_entity: sensor.my_battery_soc   # optional
+```
+
+While the **Storm prep** switch is on, the plan changes like this:
+
+* grid charging runs in every off-peak window (all day on weekends and holidays), at the storm charge
+  power (default 10 kW), up to the **Storm prep charge target** (default 100%);
+* peak hours still run from the battery, and your custom hold windows are ignored;
+* the session ends 3 hours after the storm does (36 hours after switching on if no storm end is
+  known). A later storm end pushes it out. With a grid-down sensor set, it waits for the grid.
+
+Nothing is written unless the integration is in read-write mode, and write groups you switched off
+stay yours. The switch works with no further setup.
+
+**Recommendations and automatic mode** are optional (**Configure > Storm prep**):
+
+| Setting | What it does |
+|---|---|
+| NWS zone codes (US) | Active National Weather Service alerts, checked every 10 minutes. High wind, winter storm, ice, blizzard, hurricane and tropical storm warnings and watches mean *prep*; advisories, thunderstorm and tornado alerts mean *watch*. |
+| Weather forecast | A second opinion from any weather entity with an hourly forecast: sustained wind of 25 mph (watch) or 35 mph (prep), or frozen precipitation, in the next 48 hours. |
+| Phone message action | For example `notify.mobile_app_your_phone`, with Prep now / Skip / Cancel buttons. |
+| Grid-down sensor | A binary sensor that is on while the grid is down. |
+| Storm charge power, highest charge start level | Hardware limits. 90% suits the 12000XP and 15kXP. |
+
+With **Storm prep automatic** on, only a National Weather Service *prep* alert starts a session (never
+the forecast alone), once the storm is under 24 hours away. Between your first and last peak of a
+day it waits for the last peak to begin, if the storm starts at least 4 hours after that peak ends.
+**Skip this storm** (or turning the switch off) leaves that storm alone.
+
+Privacy: nothing is requested from the weather service unless you enter zone codes, and only those
+codes are sent.
+
+Automations can react to the `eg4_tou_storm` event (`type`: `recommended`, `started`, `ended`,
+`skipped`). Storm prep is a convenience, not a safety system: follow official warnings.
 
 ## Safety (please read)
 
@@ -180,7 +224,7 @@ probed read-only first). Tariff: the *Configure* button.
 
 **Reporting a problem:** on the integration's page, three dots, **Download diagnostics**, and attach
 the file to the issue. It contains your settings, the planned and current register values and the
-week's schedule; the gateway address is removed.
+week's schedule; the gateway address, weather zones and phone action are removed.
 
 A step-by-step walkthrough with screenshots: [Setting up the EG4 Local TOU Manager](https://sizemybackup.com/eg4-local-tou-manager-home-assistant.html).
 
@@ -425,8 +469,8 @@ cards rendering in a real browser, Configure and the reload it triggers, a Home 
 clean uninstall. Run it before tagging a release:
 
 ```
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.11.0
-uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.11.0 \
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.12.0
+uv run --with playwright --with pyyaml python tools/clean_install_test.py --ref v0.12.0 \
     --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4        # oldest supported version
 ```
 

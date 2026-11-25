@@ -27,6 +27,12 @@ test("renders a lane per rule, bars at the right place, now marker", () => {
   assert.ok(!h.includes("inverter differs") && !h.includes('track inv'));
 });
 
+test("storm prep renames the charge lane: it is not only overnight then", () => {
+  const h = renderTimeline({ ...model, storm: true }, 0, "");
+  assert.match(h, /Grid charge \(storm prep\)/);
+  assert.doesNotMatch(h, /Overnight charge/);
+});
+
 test("a differing inverter shows its own track and a warning", () => {
   const m = structuredClone(model);
   m.charge.inverter = [["02:00", "06:00"]];

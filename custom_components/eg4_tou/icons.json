@@ -19,6 +19,15 @@
           "read_only": "mdi:eye-outline",
           "live": "mdi:pencil-circle"
         }
+      },
+      "storm": {
+        "default": "mdi:weather-partly-cloudy",
+        "state": {
+          "prep": "mdi:weather-lightning-rainy",
+          "watch": "mdi:weather-windy",
+          "unknown": "mdi:cloud-off-outline",
+          "not_configured": "mdi:cog-outline"
+        }
       }
     },
     "switch": {
@@ -39,6 +48,12 @@
       },
       "write_power": {
         "default": "mdi:flash-outline"
+      },
+      "storm_prep": {
+        "default": "mdi:shield-home"
+      },
+      "storm_auto": {
+        "default": "mdi:autorenew"
       }
     },
     "number": {
@@ -53,6 +68,9 @@
       },
       "ac_charge_kw": {
         "default": "mdi:transmission-tower-import"
+      },
+      "storm_target_soc": {
+        "default": "mdi:battery-arrow-up"
       }
     },
     "time": {
@@ -66,6 +84,11 @@
     "select": {
       "tariff": {
         "default": "mdi:cash-clock"
+      }
+    },
+    "button": {
+      "storm_skip": {
+        "default": "mdi:debug-step-over"
       }
     }
   },

@@ -122,6 +122,10 @@ class Settings:
     start_soc_gap: int = 5      # AC charge starts this many % below the end SOC
     ac_charge_kw: float = 5.0
     hold_custom: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)  # replaces the derived hold windows
+    storm: bool = False         # storm prep: charge in every off-peak hour up to storm_end_soc
+    storm_end_soc: int = 100
+    storm_kw: float = 10.0
+    storm_start_max: int = 90   # highest charge start SOC the inverter accepts
 
 
 def ac_first_windows(peaks: tuple[tuple[str, str], ...]) -> list[tuple[str, str]]:
@@ -171,6 +175,7 @@ class Plan:
     profile: str
     registers: dict[int, int]   # reg -> raw value
     write_order: list[int]
+    storm: bool = False
 
     def diff(self, current: dict[int, int]) -> list[tuple[int, int, int | None]]:
         """(reg, wanted, current) for registers that need writing, in a safe order."""
@@ -198,7 +203,7 @@ def build_plan(
     season = tariff.season_for(day)
     profile = "offpeak" if offpeak_day else season
     peaks = () if offpeak_day else tariff.peaks_for(day)
-    custom = settings.hold_custom.get(profile)
+    custom = None if settings.storm else settings.hold_custom.get(profile)
     first = _pad_windows(custom) if custom is not None else ac_first_windows(peaks)
 
     end = settings.end_soc.get(profile)
@@ -206,26 +211,24 @@ def build_plan(
         end = settings.end_soc.get("offpeak" if offpeak_day else tariff.like_for(day), settings.end_soc.get("offpeak", 50))
     end = int(end)
     start = max(0, end - settings.start_soc_gap)
-    c1, c2 = settings.charge_window
+    kw = settings.ac_charge_kw
+    charge = _pad_windows([settings.charge_window])
+    if settings.storm:   # grid charging wherever the battery is held anyway; peaks still run from it
+        end = settings.storm_end_soc
+        start = max(0, min(end - 2, settings.storm_start_max))
+        kw, charge = settings.storm_kw, first
 
-    regs: dict[int, int] = {
-        POWER_REG: int(round(settings.ac_charge_kw * 10)),
-        68: pack_time(c1),
-        69: pack_time(c2),
-        70: pack_time("00:00"),
-        71: pack_time("00:00"),
-        72: pack_time("00:00"),
-        73: pack_time("00:00"),
-        160: start,
-        161: end,
-    }
+    regs: dict[int, int] = {POWER_REG: int(round(kw * 10)), 160: start, 161: end}
+    for i, (a, b) in enumerate(charge):
+        regs[68 + 2 * i] = pack_time(a)
+        regs[69 + 2 * i] = pack_time(b)
     for i, (a, b) in enumerate(first):
         regs[152 + 2 * i] = pack_time(a)
         regs[153 + 2 * i] = pack_time(b)
 
     soc_order = [160, 161] if current_end_soc is None or end < current_end_soc else [161, 160]
     order = [POWER_REG, *range(68, 74), *range(152, 158), *soc_order]
-    return Plan(profile=profile, registers=regs, write_order=order)
+    return Plan(profile=profile, registers=regs, write_order=order, storm=settings.storm)
 
 
 def next_day(day: date) -> date:
@@ -258,7 +261,7 @@ def _windows(regs: Mapping[int, int | None], first_reg: int, count: int = 3) -> 
 def plan_intent(plan: Plan) -> dict[str, Any]:
     """The plan as plain settings (no register numbers), for the get_plan service and the plan attribute."""
     r = plan.registers
-    return {"profile": plan.profile, "charge_windows": _window_list(r, 68), "hold_windows": _window_list(r, 152),
+    return {"profile": plan.profile, "storm": plan.storm, "charge_windows": _window_list(r, 68), "hold_windows": _window_list(r, 152),
             "start_soc": r[160], "end_soc": r[161], "ac_charge_kw": r[66] / 10}
 
 
@@ -267,6 +270,7 @@ def timeline(plan: Plan, current: Mapping[int, int], peaks: Sequence[Sequence[st
     """Structured windows for the 24-hour timeline card: the plan and what the inverter holds now.
     `managed` (slots this integration may write) lets the card say "not managed here" for a lane."""
     return {
+        "storm": plan.storm,
         "managed": None if managed is None else {"hold": bool(managed & set(range(152, 158))),
                                                  "charge": bool(managed & set(range(68, 74)))},
         "peaks": [list(p) for p in peaks],
@@ -289,7 +293,7 @@ def rules_table(plan: Plan, current: Mapping[int, int], peaks_text: str,
     rows: list[dict[str, Any]] = [{"rule": "On-peak hours (your tariff)", "plan": peaks_text or "none", "now": "n/a", "in_sync": None}]
     rules: tuple[tuple[str, Callable[[Mapping[int, int]], str | None]], ...] = (
         ("Hold windows (AC First)", lambda r: _windows(r, 152)),
-        ("Overnight charge window", lambda r: _windows(r, 68)),
+        ("Grid charge windows (storm prep)" if plan.storm else "Overnight charge window", lambda r: _windows(r, 68)),
         ("Charge starts below / stops at", pct),
         ("AC charge power", kw),
     )
@@ -306,7 +310,8 @@ def rules_table(plan: Plan, current: Mapping[int, int], peaks_text: str,
 
 
 def week_schedule(start: date, tariff: Tariff, settings: Settings,
-                  day_info: Callable[[date], tuple[bool, str]], days: int = 8) -> list[dict[str, Any]]:
+                  day_info: Callable[[date], tuple[bool, str]], days: int = 8,
+                  storm_last: date | None = None) -> list[dict[str, Any]]:
     """The next `days` days of schedule, for cards that count down to the next event.
 
     day_info(day) -> (offpeak_day: bool, day_type_label: str). Hold and charge windows are the
@@ -316,7 +321,8 @@ def week_schedule(start: date, tariff: Tariff, settings: Settings,
     for i in range(days):
         d = start + timedelta(days=i)
         offpeak, label = day_info(d)
-        plan = build_plan(d, tariff, settings, offpeak_day=offpeak)
+        stormy = settings.storm and (storm_last is None or d <= storm_last)
+        plan = build_plan(d, tariff, replace(settings, storm=stormy), offpeak_day=offpeak)
         out.append({
             "date": d.isoformat(),
             "dow": d.strftime("%a"),

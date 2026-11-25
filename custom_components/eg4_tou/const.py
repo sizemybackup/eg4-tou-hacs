@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from typing import Any
 
 DOMAIN = "eg4_tou"
-PLATFORMS = ["sensor", "switch", "number", "time", "select"]
+PLATFORMS = ["sensor", "switch", "number", "time", "select", "button"]
 SCAN_INTERVAL_MIN = 10
 
 CONF_HOST = "host"
@@ -37,7 +37,25 @@ OPT_KW_MAX = "ac_kw_max"
 OPT_TARIFFS = "tariffs"          # the tariff library: {name: {"base": preset key | "custom": {...}, "peaks": {season: windows}}}
 OPT_ACTIVE = "active_tariff"     # name of the tariff in use
 
+# Storm prep: settings the user chooses ...
+OPT_STORM_ZONES = "storm_zones"        # NWS zone codes, "ORZ101,ORC007"; empty = never ask the weather service
+OPT_STORM_WEATHER = "storm_weather"    # optional weather entity with an hourly forecast
+OPT_STORM_NOTIFY = "storm_notify"      # optional notify action, e.g. notify.mobile_app_phone
+OPT_STORM_GRID = "storm_grid_down"     # optional binary sensor that is on while the grid is down
+OPT_STORM_AUTO = "storm_auto"          # start by itself for NWS warnings and watches
+OPT_STORM_TARGET = "storm_target_soc"
+OPT_STORM_KW = "storm_charge_kw"
+OPT_STORM_START_MAX = "storm_start_soc_max"   # the 12000XP/15kXP accept at most 90 as the charge start SOC
+# ... and the session's own state
+OPT_STORM_PREP = "storm_prep"
+OPT_STORM_UNTIL = "storm_until"
+OPT_STORM_HANDLED = "storm_handled"
+OPT_STORM_NOTIFIED = "storm_notified"
+
 DEFAULT_OPTIONS: dict[str, Any] = {
+    OPT_STORM_ZONES: "", OPT_STORM_WEATHER: "", OPT_STORM_NOTIFY: "", OPT_STORM_GRID: "",
+    OPT_STORM_AUTO: False, OPT_STORM_TARGET: 100, OPT_STORM_KW: 10.0, OPT_STORM_START_MAX: 90,
+    OPT_STORM_PREP: False, OPT_STORM_UNTIL: 0.0, OPT_STORM_HANDLED: 0.0, OPT_STORM_NOTIFIED: 0.0,
     OPT_ENABLED: False,   # never write until the user turns it on
     OPT_DRY_RUN: True,    # and even then, plan-only until they leave dry run
     OPT_CHARGE_START: "01:00",

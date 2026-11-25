@@ -104,7 +104,7 @@ function renderTimeline(model, now, title, opts) {
     (opts && opts.tariff ? `<div class="tariffline">Tariff: <b>${esc(opts.tariff)}</b></div>` : "") +
     lane("On-peak hours (your tariff)", "peak", peaks, null, now, false, h24) +
     lane("Hold windows (AC First)", "hold", (m.hold || {}).plan, (m.hold || {}).inverter, now, true, h24, (m.managed || {}).hold) +
-    lane("Overnight charge", "charge", (m.charge || {}).plan, (m.charge || {}).inverter, now, true, h24, (m.managed || {}).charge) +
+    lane(m.storm ? "Grid charge (storm prep)" : "Overnight charge", "charge", (m.charge || {}).plan, (m.charge || {}).inverter, now, true, h24, (m.managed || {}).charge) +
     axis(now, h24) + `</div>`;
 }
 

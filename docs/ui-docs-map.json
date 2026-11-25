@@ -33,7 +33,8 @@
         "custom_components/eg4_tou/time.py",
         "custom_components/eg4_tou/sensor.py",
         "custom_components/eg4_tou/entity.py",
-        "custom_components/eg4_tou/const.py"
+        "custom_components/eg4_tou/const.py",
+        "custom_components/eg4_tou/button.py"
       ],
       "articles": [
         "eg4-local-tou-manager-home-assistant.html"
@@ -43,7 +44,7 @@
       ]
     },
     "dashboard-and-cards": {
-      "why": "The ready-made dashboard and the two custom cards.",
+      "why": "The ready-made dashboard and the custom cards.",
       "ui_files": [
         "custom_components/eg4_tou/dashboard.yaml",
         "custom_components/eg4_tou/frontend/*.js"
@@ -84,6 +85,24 @@
         "eg4-battery-charge-limit-80-percent.html"
       ],
       "screenshots": []
+    },
+    "storm-prep": {
+      "why": "Storm prep behaviour, thresholds, screens and card, as the storm prep article describes them.",
+      "ui_files": [
+        "custom_components/eg4_tou/storm.py",
+        "custom_components/eg4_tou/storm_manager.py",
+        "custom_components/eg4_tou/frontend/eg4-tou-storm-card.js"
+      ],
+      "articles": [
+        "eg4-storm-prep-home-assistant.html",
+        "eg4-local-tou-manager-home-assistant.html"
+      ],
+      "screenshots": [
+        "storm-recommended.webp",
+        "storm-on.webp",
+        "storm-timeline.webp",
+        "configure-storm.webp"
+      ]
     }
   }
 }

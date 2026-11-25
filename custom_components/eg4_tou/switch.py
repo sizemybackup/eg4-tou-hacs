@@ -8,7 +8,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import OPT_DRY_RUN, OPT_ENABLED, OPT_WRITE_GROUPS, write_groups
+from .const import OPT_DRY_RUN, OPT_ENABLED, OPT_STORM_AUTO, OPT_STORM_PREP, OPT_WRITE_GROUPS, write_groups
 from .drivers import GROUPS
 from .coordinator import TouConfigEntry, TouCoordinator
 from .entity import TouEntity
@@ -21,7 +21,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: TouConfigEntry,
     c = entry.runtime_data
     async_add_entities([OptionSwitch(c, OPT_ENABLED, "Controller enabled"),
                         OptionSwitch(c, OPT_DRY_RUN, "Read-only mode"),
-                        *(GroupSwitch(c, g, GROUP_NAMES[g]) for g in GROUPS)])
+                        *(GroupSwitch(c, g, GROUP_NAMES[g]) for g in GROUPS),
+                        StormSwitch(c, OPT_STORM_PREP, "Storm prep"),
+                        OptionSwitch(c, OPT_STORM_AUTO, "Storm prep automatic")])
 
 
 GROUP_NAMES = {"charge_window": "Manage charge window", "hold_windows": "Manage hold windows",
@@ -47,6 +49,16 @@ class OptionSwitch(TouEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         self._set_option(self._key, False)
+
+
+class StormSwitch(OptionSwitch):
+    """Storm prep now. Goes through the storm manager, which also sets when it ends."""
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.storm.async_turn_on()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.storm.async_turn_off()
 
 
 class GroupSwitch(OptionSwitch):

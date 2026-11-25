@@ -6,7 +6,7 @@ custom_components/eg4_tou in a fresh config folder), then walks the new-user jou
 Docker container and prints a PASS/FAIL table. Nothing from your own working tree is used.
 
   uv run --with playwright python tools/clean_install_test.py                      # latest release, HA stable
-  uv run --with playwright python tools/clean_install_test.py --ref v0.11.0 \
+  uv run --with playwright python tools/clean_install_test.py --ref v0.12.0 \
         --ha-image ghcr.io/home-assistant/home-assistant:2025.1.4                  # oldest supported HA
   uv run --with playwright python tools/clean_install_test.py --local                   # the working tree, before tagging
   python3 tools/clean_install_test.py --no-browser                                 # skip the dashboard checks
@@ -172,7 +172,7 @@ def check_layout(pkg: Path, ref: str) -> None:
     record("manifest has the keys HACS/hassfest require", need <= set(man), "missing: " + ", ".join(sorted(need - set(man))) if need - set(man) else f"v{man['version']}")
     record("manifest version matches the release tag", man["version"] == ref.lstrip("v"), f"manifest {man['version']} vs tag {ref}")
     files = ["__init__.py", "config_flow.py", "translations/en.json", "frontend/eg4-tou-timeline-card.js",
-             "frontend/eg4-tou-rules-card.js", "dashboard.yaml", "services.yaml", "brand/icon.png", "brand/dark_icon.png", "brand/logo.png"]
+             "frontend/eg4-tou-rules-card.js", "frontend/eg4-tou-storm-card.js", "dashboard.yaml", "services.yaml", "brand/icon.png", "brand/dark_icon.png", "brand/logo.png"]
     miss = [f for f in files if not (pkg / f).exists()]
     record("all runtime files are present in the archive", not miss, ", ".join(miss) or f"{sum(1 for _ in pkg.rglob('*') if _.is_file())} files")
     record("integration does not ship tests or secrets", not any(p.suffix in (".env", ".pem", ".key") or p.name.startswith("test_") for p in pkg.rglob("*")))
@@ -217,7 +217,7 @@ def wait_entities(ha: HA, timeout=240) -> dict:
     while time.time() < end:
         st = {k: v for k, v in ha.states().items() if k.split(".", 1)[1].startswith("eg4_tou_")}
         prof = st.get("sensor.eg4_tou_active_profile")
-        if len(st) >= 16 and prof and prof["state"] not in ("unavailable", "unknown"):
+        if len(st) >= 21 and prof and prof["state"] not in ("unavailable", "unknown"):
             return st
         time.sleep(5)
     return st
@@ -229,9 +229,11 @@ def check_entities(st: dict) -> None:
             "number.eg4_tou_charge_limit_summer_weekday", "number.eg4_tou_charge_limit_winter_weekday",
             "number.eg4_tou_charge_limit_weekend_holiday", "time.eg4_tou_charge_start", "time.eg4_tou_charge_end",
             "select.eg4_tou_tariff", "switch.eg4_tou_manage_charge_window", "switch.eg4_tou_manage_hold_windows",
-            "switch.eg4_tou_manage_charge_limits", "switch.eg4_tou_manage_charge_power"]
+            "switch.eg4_tou_manage_charge_limits", "switch.eg4_tou_manage_charge_power",
+            "sensor.eg4_tou_storm_recommendation", "switch.eg4_tou_storm_prep", "switch.eg4_tou_storm_prep_automatic",
+            "number.eg4_tou_storm_prep_charge_target", "button.eg4_tou_skip_this_storm"]
     miss = [e for e in want if e not in st]
-    record("all 16 entities exist with predictable ids", not miss, ", ".join(miss) or "ok")
+    record("all 21 entities exist with predictable ids", not miss, ", ".join(miss) or "ok")
     bad = [e for e in want if e in st and st[e]["state"] in ("unavailable",)]
     record("no entity is unavailable", not bad, ", ".join(bad))
     prof = st.get("sensor.eg4_tou_active_profile", {})
@@ -271,12 +273,13 @@ def check_update_service(ha: HA) -> None:
 
 
 def check_frontend(ha: HA, version: str) -> None:
-    for name, tag in (("eg4-tou-timeline-card.js", "eg4-tou-timeline-card"), ("eg4-tou-rules-card.js", "eg4-tou-rules-card")):
+    for name, tag in (("eg4-tou-timeline-card.js", "eg4-tou-timeline-card"), ("eg4-tou-rules-card.js", "eg4-tou-rules-card"),
+                      ("eg4-tou-storm-card.js", "eg4-tou-storm-card")):
         s, body = ha.call("GET", f"/{DOMAIN}/{name}", auth=False)
         record(f"card file {name} is served", s == 200 and tag in str(body), f"http {s}")
     s, html = ha.call("GET", "/", auth=False)
-    record("both cards are registered with the frontend", all(f"/{DOMAIN}/{n}?v={version}" in str(html) for n in
-           ("eg4-tou-timeline-card.js", "eg4-tou-rules-card.js")), f"?v={version}")
+    record("all cards are registered with the frontend", all(f"/{DOMAIN}/{n}?v={version}" in str(html) for n in
+           ("eg4-tou-timeline-card.js", "eg4-tou-rules-card.js", "eg4-tou-storm-card.js")), f"?v={version}")
 
 
 def browser_checks(ha: HA, work: Path, base: str) -> None:
@@ -302,17 +305,19 @@ def browser_checks(ha: HA, work: Path, base: str) -> None:
         record("the wizard created the EG4 TOU dashboard in the sidebar", ["eg4-tou", "EG4 TOU", True] in dashes, str(dashes))
         cfg = pg.evaluate("""async () => { const h = document.querySelector('home-assistant').hass;
             return await h.callWS({type: 'lovelace/config', url_path: 'eg4-tou'}); }""")
-        record("the dashboard holds the shipped views and both cards", cfg.get("views", [{}])[0].get("path") == "schedule"
-               and "eg4-tou-rules-card" in json.dumps(cfg) and "eg4-tou-timeline-card" in json.dumps(cfg), str(list(cfg))[:80])
+        record("the dashboard holds the shipped views and all cards", cfg.get("views", [{}])[0].get("path") == "schedule"
+               and "eg4-tou-rules-card" in json.dumps(cfg) and "eg4-tou-timeline-card" in json.dumps(cfg) and "eg4-tou-storm-card" in json.dumps(cfg), str(list(cfg))[:80])
         pg.goto(base + "/eg4-tou/schedule"); pg.wait_for_timeout(9000)
-        defined = pg.evaluate("() => [!!customElements.get('eg4-tou-rules-card'), !!customElements.get('eg4-tou-timeline-card')]")
-        record("both custom cards are defined in the browser", all(defined), str(defined))
+        defined = pg.evaluate("() => [!!customElements.get('eg4-tou-rules-card'), !!customElements.get('eg4-tou-timeline-card'), !!customElements.get('eg4-tou-storm-card')]")
+        record("all custom cards are defined in the browser", all(defined), str(defined))
         text = pg.evaluate("""() => { const out = {}; const walk = (r) => { for (const e of r.querySelectorAll('*')) {
             if (e.tagName.toLowerCase() === 'eg4-tou-rules-card') out.rules = e.shadowRoot ? e.shadowRoot.textContent : '';
             if (e.tagName.toLowerCase() === 'eg4-tou-timeline-card') out.timeline = e.shadowRoot ? e.shadowRoot.textContent : '';
+            if (e.tagName.toLowerCase() === 'eg4-tou-storm-card') out.storm = e.shadowRoot ? e.shadowRoot.textContent : '';
             if (e.shadowRoot) walk(e.shadowRoot); } }; walk(document); return out; }""")
         record("the rules card shows live data", "Season" in text.get("rules", "") and "Next" in text.get("rules", ""), text.get("rules", "")[:70].replace("\n", " "))
         record("the timeline card shows live data", "On-peak" in text.get("timeline", ""), text.get("timeline", "")[:70].replace("\n", " "))
+        record("the storm card shows its controls", "Prep: Off" in text.get("storm", "") and "Skip" in text.get("storm", ""), text.get("storm", "")[:70].replace("\n", " "))
         reg = pg.evaluate("""async () => { const h = document.querySelector('home-assistant').hass;
             const out = {}; for (const id of ['switch.eg4_tou_read_only_mode', 'switch.eg4_tou_controller_enabled'])
               { const e = await h.callWS({type: 'config/entity_registry/get', entity_id: id}); out[id] = e.entity_category; } return out; }""")
@@ -361,7 +366,7 @@ def options_and_reload(ha: HA, entry_id: str) -> None:
            f"http {s} {str(plan)[:140]}")
     time.sleep(8)                                    # the entry reloads itself
     st = wait_entities(ha, 150)
-    record("the entry reloads after Configure and the entities come back", len(st) >= 16 and
+    record("the entry reloads after Configure and the entities come back", len(st) >= 21 and
            st.get("sensor.eg4_tou_active_profile", {}).get("state") not in (None, "unavailable"), f"{len(st)} entities")
 
 
@@ -415,7 +420,7 @@ def main() -> int:
                     sh("docker", "restart", container)
                     ha.wait_up()
                     st = wait_entities(ha, 240)
-                    record("after a Home Assistant restart the integration loads again", len(st) >= 16 and
+                    record("after a Home Assistant restart the integration loads again", len(st) >= 21 and
                            st.get("sensor.eg4_tou_active_profile", {}).get("state") not in (None, "unavailable"), f"{len(st)} entities")
                     # uninstall
                     s, _ = ha.call("DELETE", f"/api/config/config_entries/entry/{ctx['entry_id']}")

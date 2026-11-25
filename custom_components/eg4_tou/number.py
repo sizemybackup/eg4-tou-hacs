@@ -6,7 +6,8 @@ from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import AC_KW_STEP, OPT_AC_KW, OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER, limits
+from .const import (AC_KW_STEP, OPT_AC_KW, OPT_END_SOC_OFFPEAK, OPT_END_SOC_SUMMER, OPT_END_SOC_WINTER,
+                    OPT_STORM_TARGET, limits)
 from .coordinator import TouConfigEntry, TouCoordinator
 from .entity import TouEntity
 
@@ -21,6 +22,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TouConfigEntry,
         OptionNumber(c, OPT_END_SOC_WINTER, "Charge limit, winter weekday", "soc", 1, PERCENTAGE),
         OptionNumber(c, OPT_END_SOC_OFFPEAK, "Charge limit, weekend / holiday", "soc", 1, PERCENTAGE),
         OptionNumber(c, OPT_AC_KW, "AC charge power", "kw", AC_KW_STEP, UnitOfPower.KILO_WATT),
+        OptionNumber(c, OPT_STORM_TARGET, "Storm prep charge target", "soc", 1, PERCENTAGE),
     ])
 
 
