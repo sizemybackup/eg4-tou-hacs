@@ -137,6 +137,23 @@ def recommend(nws: Signal | None, forecast: Signal | None) -> Signal:
     return Signal(CLEAR if all(s.level == CLEAR for s in configured) else UNKNOWN)
 
 
+STORM_GROUPS = {"charge_window": "charge windows", "soc": "charge limits", "power": "charge power"}
+
+
+def write_warning(mode: str, managed_groups: Sequence[str]) -> str:
+    """Why storm prep would not (fully) reach the inverter, in words; "" when it will.
+
+    mode: "off", "read_only" or "live". managed_groups: the kinds of setting the integration writes."""
+    if mode == "off":
+        return "The controller is off: storm prep will not change your inverter."
+    if mode == "read_only":
+        return "Read-only mode: this is the plan only. Nothing is written to your inverter."
+    missing = [label for group, label in STORM_GROUPS.items() if group not in managed_groups]
+    if not missing:
+        return ""
+    return f"Not written by this integration: {', '.join(missing)}. Storm prep only partly applies; set the rest yourself."
+
+
 @dataclass(frozen=True)
 class Session:
     """The persisted state of storm prep (timestamps in seconds; 0 means unset)."""

@@ -114,7 +114,8 @@ While the **Storm prep** switch is on, the plan changes like this:
   known). A later storm end pushes it out. With a grid-down sensor set, it waits for the grid.
 
 Nothing is written unless the integration is in read-write mode, and write groups you switched off
-stay yours. The switch works with no further setup.
+stay yours. The storm card and its notifications say so when the controller is off, in read-only
+mode, or not managing the charge windows, charge limits or charge power. The switch works with no further setup.
 
 **Recommendations and automatic mode** are optional (**Configure > Storm prep**):
 

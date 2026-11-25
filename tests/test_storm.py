@@ -330,3 +330,42 @@ async def test_a_manager_left_over_from_a_reload_decides_nothing(hass: HomeAssis
     hass.config_entries.async_update_entry(entry, options={**entry.options, "storm_prep": True, "storm_until": 1.0})
     await old.async_options_updated()
     assert entry.runtime_data.storm is not old
+
+
+def test_the_warning_names_what_will_not_be_written():
+    every = ["charge_window", "hold_windows", "soc", "power"]
+    assert storm.write_warning("live", every) == ""
+    assert storm.write_warning("live", ["charge_window", "soc", "power"]) == ""     # hold windows do not matter
+    assert "controller is off" in storm.write_warning("off", every)
+    assert storm.write_warning("read_only", every).startswith("Read-only mode")
+    partial = storm.write_warning("live", ["hold_windows", "soc"])
+    assert "charge windows, charge power" in partial and "partly" in partial
+
+
+@pytest.mark.parametrize(("options", "expected"), [
+    ({}, "controller is off"),
+    ({"enabled": True, "dry_run": True}, "Read-only mode"),
+    ({"enabled": True, "dry_run": False}, ""),
+    ({"enabled": True, "dry_run": False, "write_groups": {"power": False}}, "charge power"),
+])
+async def test_card_and_messages_say_when_the_inverter_is_not_written(
+        hass: HomeAssistant, gateway, options: dict[str, Any], expected: str):
+    sent = notify_recorder(hass)
+    await _setup(hass, gateway, storm_notify="notify.mobile_app_phone", **options)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.eg4_tou_storm_prep"}, blocking=True)
+    await settle(hass)
+    warning = hass.states.get("sensor.eg4_tou_storm_recommendation").attributes["warning"]
+    message = sent[-1]["message"]
+    if expected:
+        assert expected in warning and warning in message
+        assert "The plan: charge to" in message and "Charging to" not in message
+    else:
+        assert warning == "" and "Charging to" in message
+
+
+async def test_a_recommendation_in_read_only_mode_carries_the_warning(hass: HomeAssistant, gateway, aioclient_mock):
+    aioclient_mock.get(NWS_URL, json=live_warning())
+    sent = notify_recorder(hass)
+    await _setup(hass, gateway, enabled=True, dry_run=True, storm_zones="ORZ101", storm_notify="notify.mobile_app_phone")
+    await settle(hass)
+    assert sent[0]["title"] == "Storm coming: prep the battery" and "Nothing is written" in sent[0]["message"]

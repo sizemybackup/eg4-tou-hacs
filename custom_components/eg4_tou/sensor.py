@@ -142,7 +142,7 @@ class StormSensor(TouEntity, SensorEntity):
                                                 ("skip", "button", "storm_skip"), ("target", "number", OPT_STORM_TARGET))}
         soc_range, _ = limits(options)
 
-        return {"controls": controls, "target_range": list(soc_range), "headline": rec.headline, "source": rec.source,
+        return {"warning": self.coordinator.storm_warning(), "controls": controls, "target_range": list(soc_range), "headline": rec.headline, "source": rec.source,
                 "onset": rec.onset.isoformat() if rec.onset else None,
                 "ends": rec.ends.isoformat() if rec.ends else None,
                 "alerts": list(rec.alerts),

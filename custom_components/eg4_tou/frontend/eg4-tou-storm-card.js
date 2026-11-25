@@ -46,7 +46,7 @@ function when(iso, h24, timeZone) {
 function note(a, h24, timeZone) {
   if (a.prep) {
     const until = when(a.until, h24, timeZone);
-    return `Charging to ${esc(a.target_soc)}% in the off-peak window closest to the storm; peak hours still run from the battery.` +
+    return `${a.warning ? "The plan: charge" : "Charging"} to ${esc(a.target_soc)}% in the off-peak window closest to the storm; peak hours still run from the battery.` +
       (until ? ` Normal schedule returns <b>${esc(until)}</b>.` : "");
   }
   if (a.skipped) return "<b>This storm is skipped.</b> Tap <b>Prep</b> if you change your mind.";
@@ -76,6 +76,7 @@ function renderStorm(state, attrs, opts = {}) {
   }
   if (opts.soc !== null && opts.soc !== undefined) lines.push(`<div class="line">Battery ${Math.round(opts.soc)}% · target ${esc(a.target_soc)}%</div>`);
   if (state === "not_configured") lines.push(`<div class="line">Add weather zones under the integration's Configure &gt; Storm prep. The buttons work without them.</div>`);
+  if (a.warning) lines.push(`<div class="warn" role="alert"><ha-icon icon="mdi:alert"></ha-icon><span>${esc(a.warning)}</span></div>`);
   lines.push(`<div class="note">${note(a, h24, tz)}</div>`);
   const target = Number(a.target_soc), [lo, hi] = a.target_range || [20, 100];
   lines.push(`<div class="row">${button("prep", "mdi:shield-home", `Prep: ${a.prep ? "On" : "Off"}`, a.prep ? "alert" : "")}` +
@@ -110,6 +111,9 @@ const STYLE = `
   .line { margin: 2px 0; }
   .note { font-size: 0.86em; color: var(--secondary-text-color); background: var(--secondary-background-color);
     border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+  .warn { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; padding: 8px 12px; border-radius: 8px;
+    border: 1px solid var(--warning-color,#ffa600); font-size: 0.9em; font-weight: 500; }
+  .warn ha-icon { flex: none; color: var(--warning-color,#ffa600); }
   .row, .target { display: flex; align-items: center; gap: 5px; }
   .row { flex-wrap: wrap; font-size: 0.82em; }
   button { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 16px; font: inherit; font-weight: 500;

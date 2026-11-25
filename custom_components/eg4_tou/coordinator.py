@@ -24,6 +24,7 @@ from .const import (
 from .drivers import GROUPS, Driver, DriverError, EntityDriver, ModbusDriver
 from .modbus import Eg4Modbus, ModbusConfig, unpack_time
 from .planner import Plan, Settings, Tariff, build_plan, peak_edit_info, validate_hold, week_schedule
+from .storm import write_warning
 from .storm_manager import StormManager
 from .tariffs import active_of, base_of, effective_of
 
@@ -128,6 +129,11 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         data = getattr(getattr(self, "storm", None), "data", None)
         onset = data.recommendation.onset if data else None
         return replace(settings, storm_onset=dt_util.as_local(onset).replace(tzinfo=None) if onset else None)
+
+    def storm_warning(self) -> str:
+        """Shown with everything about storm prep, so nobody believes it is charging when it is not."""
+        slots = managed_slots(self.entry.options, self.driver)
+        return write_warning(self._mode(), [g for g, wanted in GROUPS.items() if set(wanted) <= slots])
 
     def _mode(self) -> str:
         o = self.entry.options

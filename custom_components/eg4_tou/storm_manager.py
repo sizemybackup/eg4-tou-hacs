@@ -175,15 +175,19 @@ class StormManager(DataUpdateCoordinator[StormData]):
             return dt_util.as_local(dt_util.utc_from_timestamp(ts)).strftime("%a %H:%M")
 
         target = int(self.entry.options[OPT_STORM_TARGET])
+        warning = self.owner.storm_warning()
+        caveat = f" {warning}" if warning else ""
         if what == "recommended":
             when = f" Starts {stamp(rec.onset.timestamp())}." if rec.onset and rec.onset > dt_util.now() else ""
             how = ("Storm prep will switch on by itself." if self.entry.options[OPT_STORM_AUTO] and rec.source == "nws"
                    else "Recommended: turn on storm prep.")
-            return ("Storm coming: prep the battery", f"{rec.headline}.{when} {how} Target {target}%.",
+            return ("Storm coming: prep the battery", f"{rec.headline}.{when} {how} Target {target}%.{caveat}",
                     [{"action": ACTION_ON, "title": "Prep now"}, {"action": ACTION_SKIP, "title": "Skip this storm"}])
         if what == "started":
             reason = f"{rec.headline}. " if rec.headline else ""
-            return ("Storm prep on", f"{reason}Charging to {target}% in the off-peak window closest to the storm. Normal schedule returns {stamp(session.until)}.",
+            plan = "The plan: charge to" if warning else "Charging to"
+            return ("Storm prep on", f"{reason}{plan} {target}% in the off-peak window closest to the storm. "
+                    f"Normal schedule returns {stamp(session.until)}.{caveat}",
                     [{"action": ACTION_SKIP, "title": "Cancel"}])
         if what == "skipped":
             return "Storm prep skipped", "The battery stays on the normal schedule.", []

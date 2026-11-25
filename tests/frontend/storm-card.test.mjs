@@ -52,6 +52,20 @@ test("buttons call the integration's own entities", () => {
   assert.equal(serviceFor("other", attrs), null);
 });
 
+test("says when nothing will reach the inverter", () => {
+  const warning = "Read-only mode: this is the plan only. Nothing is written to your inverter.";
+  const on = renderStorm("prep", { ...attrs, prep: true, warning }, opts);
+  assert.match(on, /role="alert"/);
+  assert.match(on, /Nothing is written to your inverter/);
+  assert.match(on, /The plan: charge to 100%/);
+  assert.doesNotMatch(on, /Charging to/);
+  assert.match(renderStorm("clear", { ...attrs, warning }, opts), /role="alert"/);        // before turning it on, too
+  const live = renderStorm("prep", { ...attrs, prep: true, warning: "" }, opts);
+  assert.doesNotMatch(live, /role="alert"/);
+  assert.match(live, /Charging to 100%/);
+  assert.ok(!renderStorm("prep", { ...attrs, warning: "<img src=x>" }, opts).includes("<img"));
+});
+
 test("weather text is escaped", () => {
   const h = renderStorm("prep", { ...attrs, source: "forecast", headline: "<img src=x>", alerts: [{ event: "<script>" }], target_soc: "<i>" }, opts);
   assert.ok(!h.includes("<img") && !h.includes("<script>") && !h.includes("<i>"));
