@@ -131,11 +131,9 @@ class StormManager(DataUpdateCoordinator[StormData]):
         if getattr(self.entry, "runtime_data", None) is not self.owner:
             return   # the entry is being reloaded: its new manager decides, not this one
         now = dt_util.now()
-        today = now.date()
-        peaks = [] if self.owner.is_offpeak_day(today) else self.owner.tariff.peaks_for(today)
         session, what = storm.step(self.session(), data.recommendation, data.nws, now,
                                    auto=bool(self.entry.options[OPT_STORM_AUTO]),
-                                   grid_down=self._grid_down(), peaks=peaks)
+                                   grid_down=self._grid_down())
         rec = data.recommendation
         notified = float(self.entry.options[OPT_STORM_NOTIFIED])
         if what is None and rec.level == storm.PREP and not session.prep \
@@ -185,7 +183,7 @@ class StormManager(DataUpdateCoordinator[StormData]):
                     [{"action": ACTION_ON, "title": "Prep now"}, {"action": ACTION_SKIP, "title": "Skip this storm"}])
         if what == "started":
             reason = f"{rec.headline}. " if rec.headline else ""
-            return ("Storm prep on", f"{reason}Charging to {target}% in off-peak hours until {stamp(session.until)}.",
+            return ("Storm prep on", f"{reason}Charging to {target}% in the off-peak window closest to the storm. Normal schedule returns {stamp(session.until)}.",
                     [{"action": ACTION_SKIP, "title": "Cancel"}])
         if what == "skipped":
             return "Storm prep skipped", "The battery stays on the normal schedule.", []

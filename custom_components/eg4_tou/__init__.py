@@ -48,10 +48,10 @@ async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool
         hass.config_entries.async_update_entry(entry, options={**entry.options, **missing})
     coordinator = TouCoordinator(hass, entry)
     await coordinator.async_load_holidays()
-    await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     coordinator.storm = StormManager(hass, entry, coordinator)
-    await coordinator.storm.async_start()
+    await coordinator.storm.async_start()   # first: the first plan needs to know when a storm arrives
+    await coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _maybe_create_dashboard(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_options_updated))

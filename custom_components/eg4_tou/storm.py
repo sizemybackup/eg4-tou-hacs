@@ -2,14 +2,15 @@
 
 Two signals say whether a storm threatens grid power: active US National Weather Service alerts
 for the user's zones, and (optionally) the hourly forecast of a weather entity. A "storm session"
-then charges the battery to a storm target in every off-peak hour until the storm is over.
+then charges the battery to a storm target in the off-peak window closest to the storm (see
+planner.storm_charge_windows) and ends after it.
 """
 from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 PREP, WATCH, CLEAR, UNKNOWN, NOT_CONFIGURED = "prep", "watch", "clear", "unknown", "not_configured"
@@ -28,7 +29,6 @@ WATCH_EVENTS = frozenset({
 LEAD = timedelta(hours=24)            # automatic mode starts at most this long before the storm
 AFTER = timedelta(hours=3)            # how long after the storm the session stays on
 OPEN_ENDED = timedelta(hours=36)      # length of a session with no known storm end
-OFFPEAK_MARGIN = timedelta(hours=4)   # waiting for the evening off-peak needs this much time after it begins
 # Forecast thresholds (sustained wind in mph, frozen precipitation in inches of water)
 WIND_PREP, WIND_WATCH, FROZEN_PREP, FROZEN_WATCH = 35.0, 25.0, 0.5, 0.2
 FORECAST_HOURS = 48
@@ -174,22 +174,8 @@ def is_new(rec: Signal, handled: float, now: datetime) -> bool:
     return (rec.ends is None or rec.ends > now) and (rec.onset or now).timestamp() > handled
 
 
-def wait_for_offpeak(now: datetime, onset: datetime, peaks: Sequence[Sequence[str]]) -> bool:
-    """True between today's first peak and its last one, if the storm starts late enough that
-    charging after the last peak still leaves plenty of time."""
-    if not peaks:
-        return False
-
-    def today(hhmm: str) -> datetime:
-        h, m = (int(x) for x in hhmm.split(":"))
-        return datetime.combine(now.date(), time(h, m), now.tzinfo)
-
-    ordered = sorted((str(a), str(b)) for a, b in peaks)
-    return today(ordered[0][0]) <= now < today(ordered[-1][0]) and onset >= today(ordered[-1][1]) + OFFPEAK_MARGIN
-
-
-def step(session: Session, rec: Signal, nws: Signal | None, now: datetime, *, auto: bool, grid_down: bool,
-         peaks: Sequence[Sequence[str]]) -> tuple[Session, str | None]:
+def step(session: Session, rec: Signal, nws: Signal | None, now: datetime, *, auto: bool,
+         grid_down: bool) -> tuple[Session, str | None]:
     """One periodic decision: (new session, "started" | "ended" | "extended" | None)."""
     if session.prep:
         end = storm_end(rec, now)
@@ -199,6 +185,6 @@ def step(session: Session, rec: Signal, nws: Signal | None, now: datetime, *, au
             return turn_off(session, rec, now), "ended"
         return session, None
     if (auto and nws is not None and nws.level == PREP and is_new(nws, session.handled, now)
-            and (nws.onset is None or (nws.onset - now <= LEAD and not wait_for_offpeak(now, nws.onset, peaks)))):
+            and (nws.onset is None or nws.onset - now <= LEAD)):
         return turn_on(session, nws, now), "started"
     return session, None

@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.eg4_tou import storm
 from custom_components.eg4_tou.diagnostics import async_get_config_entry_diagnostics
-from custom_components.eg4_tou.modbus import pack_time
+from custom_components.eg4_tou.modbus import pack_time, unpack_time
 from custom_components.eg4_tou.planner import BGE_RL, Settings, build_plan, week_schedule
 from custom_components.eg4_tou.storm_manager import NWS_URL
 from tests.test_integration import _no_real_network_scan, _setup, gateway  # noqa: F401  (fixtures re-exported)
@@ -22,7 +22,6 @@ TZ = timezone(timedelta(hours=-5))
 NOW = datetime(2026, 11, 25, 14, 0, tzinfo=TZ)        # a winter workday afternoon
 ONSET = datetime(2026, 11, 26, 4, 0, tzinfo=TZ)
 ENDS = datetime(2026, 11, 26, 19, 0, tzinfo=TZ)
-PEAKS = [("07:00", "11:00"), ("17:00", "21:00")]
 
 
 def alerts(*items: dict[str, Any]) -> dict[str, Any]:
@@ -96,19 +95,15 @@ REC = storm.Signal("prep", "High Wind Warning", ONSET, ENDS, "nws")
 
 
 def decide(session: storm.Session, now: datetime = NOW, rec: storm.Signal = REC, *, auto: bool = True,
-           grid_down: bool = False, peaks: Any = PEAKS) -> tuple[storm.Session, str | None]:
-    return storm.step(session, rec, rec, now, auto=auto, grid_down=grid_down, peaks=peaks)
+           grid_down: bool = False) -> tuple[storm.Session, str | None]:
+    return storm.step(session, rec, rec, now, auto=auto, grid_down=grid_down)
 
 
-def test_automatic_start_waits_for_the_evening_off_peak():
-    assert decide(storm.Session())[1] is None                                  # 14:00, storm at 04:00 tomorrow
-    session, what = decide(storm.Session(), NOW.replace(hour=17))
+def test_automatic_start_is_up_to_a_day_ahead():
+    session, what = decide(storm.Session())                                    # 14:00, storm at 04:00 tomorrow
     assert what == "started" and session.until == (ENDS + timedelta(hours=3)).timestamp()
     assert session.handled == ENDS.timestamp()
     assert decide(storm.Session(), NOW.replace(hour=3))[1] is None             # more than 24 h away
-    assert decide(storm.Session(), peaks=[])[1] == "started"                   # weekend: no reason to wait
-    soon = storm.Signal("prep", "x", NOW + timedelta(hours=8), ENDS, "nws")    # starts 22:00: do not wait
-    assert decide(storm.Session(), rec=soon)[1] == "started"
 
 
 def test_automatic_start_needs_a_new_official_prep_level_storm():
@@ -116,7 +111,7 @@ def test_automatic_start_needs_a_new_official_prep_level_storm():
     assert decide(storm.Session(), evening, auto=False)[1] is None
     assert decide(storm.Session(handled=ENDS.timestamp()), evening)[1] is None       # skipped or done
     assert decide(storm.Session(), evening, storm.Signal("watch", "x", ONSET, ENDS))[1] is None
-    assert storm.step(storm.Session(), REC, None, evening, auto=True, grid_down=False, peaks=[])[1] is None  # forecast only
+    assert storm.step(storm.Session(), REC, None, evening, auto=True, grid_down=False)[1] is None  # forecast only
     far = storm.Signal("prep", "x", NOW + timedelta(days=3), NOW + timedelta(days=4), "nws")
     assert decide(storm.Session(), evening, far)[1] is None
 
@@ -140,18 +135,28 @@ def test_manual_session_and_storms_without_an_end():
     endless = storm.Signal("prep", "x", ONSET, None, "nws")
     skipped = storm.turn_off(storm.Session(), endless, NOW)
     assert skipped.handled == ONSET.timestamp()
-    assert decide(skipped, ONSET + timedelta(days=2), endless, peaks=[])[1] is None
-    assert not storm.wait_for_offpeak(NOW, ONSET, [])
+    assert decide(skipped, ONSET + timedelta(days=2), endless)[1] is None
 
 
 # ---- the planner ------------------------------------------------------------
 
-def test_storm_plan_charges_in_every_off_peak_window():
-    plan = build_plan(date(2026, 11, 25), BGE_RL, Settings(storm=True), offpeak_day=False)
-    r = plan.registers
-    assert plan.storm and (r[161], r[160], r[66]) == (100, 90, 100)
-    assert [r[i] for i in range(68, 74)] == [r[i] for i in range(152, 158)]
-    assert [r[i] for i in range(68, 74)] == [pack_time(t) for t in ("00:00", "07:00", "11:00", "17:00", "21:00", "23:59")]
+def charge(plan: Any) -> list[str]:
+    return [unpack_time(plan.registers[i]) for i in range(68, 74)]
+
+
+def test_storm_plan_charges_in_the_off_peak_window_closest_to_the_storm():
+    day = date(2026, 11, 25)                                       # peaks 07-11 and 17-21
+    ahead = build_plan(day, BGE_RL, Settings(storm=True, storm_onset=datetime(2026, 11, 26, 4)), offpeak_day=False)
+    r = ahead.registers
+    assert ahead.storm and (r[161], r[160], r[66]) == (100, 90, 100)
+    assert charge(ahead) == ["00:00", "07:00", "21:00", "23:59", "00:00", "00:00"]
+    assert [unpack_time(r[i]) for i in range(152, 158)] == ["00:00", "07:00", "11:00", "17:00", "21:00", "23:59"]
+    for onset in (datetime(2026, 11, 26, 0, 30), datetime(2026, 11, 25, 15), datetime(2026, 11, 25, 9)):
+        soon = build_plan(day, BGE_RL, Settings(storm=True, storm_onset=onset), offpeak_day=False)
+        assert charge(soon) == ["00:00", "07:00", "11:00", "17:00", "21:00", "23:59"]     # mid-day is needed
+    assert charge(build_plan(day, BGE_RL, Settings(storm=True), offpeak_day=False)) == charge(ahead)   # unknown
+    one_peak = build_plan(date(2026, 7, 8), BGE_RL, Settings(storm=True), offpeak_day=False)
+    assert charge(one_peak) == ["00:00", "10:00", "20:00", "23:59", "00:00", "00:00"]
     weekend = build_plan(date(2026, 11, 28), BGE_RL, Settings(storm=True, storm_end_soc=80), offpeak_day=True)
     assert (weekend.registers[68], weekend.registers[69], weekend.registers[160]) == (0, pack_time("23:59"), 78)
 

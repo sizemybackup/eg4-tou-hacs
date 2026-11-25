@@ -3,7 +3,7 @@ when enabled and not in dry-run) write the differences. Idempotent."""
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from collections.abc import Mapping
 from datetime import date, timedelta
 from typing import Any
@@ -122,8 +122,12 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         label = f"Holiday: {holiday}" if holiday else ("Weekend" if day.weekday() >= 5 else "Off-peak day" if no_peak_day else "Workday")
         return offpeak, label
 
-    def is_offpeak_day(self, day: date) -> bool:
-        return self._day_info(day)[0]
+    def _settings(self) -> Settings:
+        """The user's settings, plus when the storm arrives (storm prep charges just ahead of it)."""
+        settings = settings_from_options(self.entry.options)
+        data = getattr(getattr(self, "storm", None), "data", None)
+        onset = data.recommendation.onset if data else None
+        return replace(settings, storm_onset=dt_util.as_local(onset).replace(tzinfo=None) if onset else None)
 
     def _mode(self) -> str:
         o = self.entry.options
@@ -143,8 +147,8 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
         managed = managed_slots(self.entry.options, self.driver)
         today = dt_util.now().date()
         offpeak, _ = self._day_info(today)
-        plan = build_plan(today, self.tariff, settings_from_options(self.entry.options),
-                          offpeak_day=offpeak, current_end_soc=current.get(161))
+        settings = self._settings()
+        plan = build_plan(today, self.tariff, settings, offpeak_day=offpeak, current_end_soc=current.get(161))
         pending = [p for p in plan.diff(current) if p[0] in managed]
         mode = self._mode()
 
@@ -157,7 +161,6 @@ class TouCoordinator(DataUpdateCoordinator[TouData]):
                 pass  # next cycle will re-check; the write result is already recorded
         peak_list = [] if offpeak else [list(p) for p in self.tariff.peaks_for(today)]
         peaks = ", ".join(f"{a}-{b}" for a, b in peak_list) if not offpeak else "none (off-peak day)"
-        settings = settings_from_options(self.entry.options)
         facts = {"mode": mode, "out_of_sync": len(pending), "start_soc": plan.registers[160],
                  "end_soc": plan.registers[161], "ac_kw": plan.registers[66] / 10, "storm": plan.storm}
         until = float(self.entry.options.get(OPT_STORM_UNTIL, 0))

@@ -321,7 +321,7 @@
       },
       "storm": {
         "title": "Storm prep",
-        "description": "Storm prep charges the battery to a storm target in every off-peak hour (all day on weekends and holidays), then returns to the normal schedule 3 hours after the storm. The **Storm prep** switch works without any of the settings below.\n\nIn the US, enter your National Weather Service zone codes to get recommendations and allow automatic mode. Only those codes are sent to api.weather.gov, and nothing is sent if the box is empty. Find your codes at {zone_url} .",
+        "description": "Storm prep charges the battery to a storm target in the off-peak window closest to the storm (all day on weekends and holidays), then returns to the normal schedule 3 hours after the storm. The **Storm prep** switch works without any of the settings below.\n\nIn the US, enter your National Weather Service zone codes to get recommendations and allow automatic mode. Only those codes are sent to api.weather.gov, and nothing is sent if the box is empty. Find your codes at {zone_url} .",
         "data": {
           "storm_zones": "NWS zone codes",
           "storm_weather": "Weather forecast (second opinion)",

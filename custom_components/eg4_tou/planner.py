@@ -6,7 +6,7 @@ video. The planner only decides; the coordinator reads, diffs and writes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
@@ -122,7 +122,8 @@ class Settings:
     start_soc_gap: int = 5      # AC charge starts this many % below the end SOC
     ac_charge_kw: float = 5.0
     hold_custom: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)  # replaces the derived hold windows
-    storm: bool = False         # storm prep: charge in every off-peak hour up to storm_end_soc
+    storm: bool = False         # storm prep: charge in the off-peak window closest to the storm, up to storm_end_soc
+    storm_onset: datetime | None = None   # when the storm arrives, local time without a zone (None: unknown)
     storm_end_soc: int = 100
     storm_kw: float = 10.0
     storm_start_max: int = 90   # highest charge start SOC the inverter accepts
@@ -154,6 +155,25 @@ def _pad_windows(windows: Sequence[Sequence[str]]) -> list[tuple[str, str]]:
     if len(out) > 3:
         raise ValueError("at most 3 hold windows are supported")
     return out + [("00:00", "00:00")] * (3 - len(out))
+
+
+STORM_CHARGE_TIME = timedelta(hours=4)   # off-peak time that must remain before the storm to skip mid-day
+
+
+def storm_charge_windows(day: date, windows: Sequence[tuple[str, str]], onset: datetime | None) -> list[tuple[str, str]]:
+    """Which of the day's non-peak windows to charge in during storm prep.
+
+    The evening and overnight windows are the off-peak ones closest to a storm. A window between two
+    peaks is added only if the storm arrives before charging after the last peak could finish (or is
+    already under way)."""
+    used = [w for w in windows if w != ("00:00", "00:00")]
+    between = [w for w in used if w[0] != "00:00" and w[1] != END_OF_DAY]
+    if not between:
+        return used
+    after_last_peak = datetime.combine(day, time.fromisoformat(used[-1][0]))
+    if onset is not None and onset < after_last_peak + STORM_CHARGE_TIME:
+        return used
+    return [w for w in used if w not in between]
 
 
 def validate_hold(windows: Sequence[Sequence[str]]) -> str | None:
@@ -213,10 +233,10 @@ def build_plan(
     start = max(0, end - settings.start_soc_gap)
     kw = settings.ac_charge_kw
     charge = _pad_windows([settings.charge_window])
-    if settings.storm:   # grid charging wherever the battery is held anyway; peaks still run from it
+    if settings.storm:   # grid charging in off-peak windows; peaks still run from the battery
         end = settings.storm_end_soc
         start = max(0, min(end - 2, settings.storm_start_max))
-        kw, charge = settings.storm_kw, first
+        kw, charge = settings.storm_kw, _pad_windows(storm_charge_windows(day, first, settings.storm_onset))
 
     regs: dict[int, int] = {POWER_REG: int(round(kw * 10)), 160: start, 161: end}
     for i, (a, b) in enumerate(charge):

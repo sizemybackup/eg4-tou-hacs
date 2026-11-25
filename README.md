@@ -105,8 +105,10 @@ battery_soc_entity: sensor.my_battery_soc   # optional
 
 While the **Storm prep** switch is on, the plan changes like this:
 
-* grid charging runs in every off-peak window (all day on weekends and holidays), at the storm charge
-  power (default 10 kW), up to the **Storm prep charge target** (default 100%);
+* grid charging runs at the storm charge power (default 10 kW), up to the **Storm prep charge
+  target** (default 100%), in the off-peak window closest to the storm: after your last peak and
+  overnight (all day on weekends and holidays). A window between two peaks is used only if the storm
+  arrives less than 4 hours after your last peak ends, or is already under way;
 * peak hours still run from the battery, and your custom hold windows are ignored;
 * the session ends 3 hours after the storm does (36 hours after switching on if no storm end is
   known). A later storm end pushes it out. With a grid-down sensor set, it waits for the grid.
@@ -125,8 +127,7 @@ stay yours. The switch works with no further setup.
 | Storm charge power, highest charge start level | Hardware limits. 90% suits the 12000XP and 15kXP. |
 
 With **Storm prep automatic** on, only a National Weather Service *prep* alert starts a session (never
-the forecast alone), once the storm is under 24 hours away. Between your first and last peak of a
-day it waits for the last peak to begin, if the storm starts at least 4 hours after that peak ends.
+the forecast alone), once the storm is under 24 hours away; charging then follows the windows above.
 **Skip this storm** (or turning the switch off) leaves that storm alone.
 
 Privacy: nothing is requested from the weather service unless you enter zone codes, and only those

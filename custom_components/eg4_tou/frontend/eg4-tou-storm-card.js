@@ -46,7 +46,7 @@ function when(iso, h24, timeZone) {
 function note(a, h24, timeZone) {
   if (a.prep) {
     const until = when(a.until, h24, timeZone);
-    return `Charging to ${esc(a.target_soc)}% in every off-peak window; peak hours still run from the battery.` +
+    return `Charging to ${esc(a.target_soc)}% in the off-peak window closest to the storm; peak hours still run from the battery.` +
       (until ? ` Normal schedule returns <b>${esc(until)}</b>.` : "");
   }
   if (a.skipped) return "<b>This storm is skipped.</b> Tap <b>Prep</b> if you change your mind.";
